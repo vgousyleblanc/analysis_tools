@@ -4,7 +4,7 @@ import requests
 
 class CalibrationDBInterface:
     
-    def __init__(self, credential_path="./.wctecaldb.credential", calibration_db_url = "https://test.wcte.caldb.triumf.ca/api/v1/"):
+    def __init__(self, credential_path="./.wctecaldb.credential", calibration_db_url = "https://wcte.caldb.triumf.ca/api/v1/"):
         self.credential_path = credential_path
         self.calibration_db_url = calibration_db_url
         self.get_jwt_token()
@@ -16,6 +16,8 @@ class CalibrationDBInterface:
         if not os.path.isfile(self.credential_path) or not os.access(self.credential_path, os.R_OK):
             print("Can't find credential path at ",self.credential_path)
             print("See instructions https://wcte.hyperk.ca/documents/calibration-db-apis/v1-api-endpoints-documentation")
+            print("Or copy credential file from EOS 'cp /eos/experiment/wcte/calibration_db_credentials/.wctecaldb.credential .' ")
+            
             raise FileNotFoundError(f"Credential file not found or not readable: {self.credential_path}")
 
         # Read credentials from the file (expects shell-style exports or var=val lines)
@@ -50,6 +52,7 @@ class CalibrationDBInterface:
         
         # Parse the token from the response
         self.jwt_token = response.json().get('access_token')
+        print(self.jwt_token)
         if not self.jwt_token:
             raise ValueError("Failed to retrieve access_token from the response.")
 
@@ -62,19 +65,24 @@ class CalibrationDBInterface:
     
     def get_calibration_constants(self, run_number, time, calibration_name, official):
         url = self.calibration_db_url+"calibration_constants/by_validity_period"
+        # params = {
+        #     "run_number": run_number,
+        #     "time": time,
+        #     "calibration_name": calibration_name,
+        #     "official":official
+        # }
         params = {
             "run_number": run_number,
-            "time": run_number,
+            "time": time,
             "calibration_name": calibration_name,
-            "official":official
+            "official": official
         }
         headers = {
             "Authorization": f"Bearer {self.jwt_token}"
         }
 
         response = requests.get(url, params=params, headers=headers)
-        print(response, response.json())
-        
+                
         if response.status_code != 200:
             print(response, response.json())
             raise ValueError(f"Unexpected status code in constant request response {response.status_code}, expected 201. \n"+
@@ -82,8 +90,9 @@ class CalibrationDBInterface:
                             )
         
         calibration_data = response.json()
+
         timing_offsets_list = calibration_data[0]['data']
-        # print(calibration_data)
         revision_id = calibration_data[0]['revision_id']
         insert_time = calibration_data[0]['insert_time']
         return timing_offsets_list, revision_id, insert_time
+        return

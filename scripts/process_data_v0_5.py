@@ -249,11 +249,11 @@ if __name__ == "__main__":
     
     #get calibration constants
     calibration_db_interface = CalibrationDBInterface()
-    timing_offsets_list, timing_constant_revision_id, timing_constant_insert_time = calibration_db_interface.get_calibration_constants(args.run_number, 0, "timing_offsets", 0)
+    timing_offsets_list, timing_constant_revision_id, timing_constant_insert_time = calibration_db_interface.get_calibration_constants(args.run_number, 0, "timing_offsets", 1)
     timing_offsets_dict = {}
     #load into dict
     for offset in timing_offsets_list:
-        timing_offsets_dict[offset['glb_pmt_id']]=offset['data']
+        timing_offsets_dict[offset['glb_pmt_id']]=offset['data']['timing_offset']
     #set of all channels with calibration constants 
     timing_constant_set = {offset['glb_pmt_id'] for offset in timing_offsets_list}
     
@@ -289,4 +289,3 @@ if __name__ == "__main__":
     process_data(args.input_files, args.run_number, args.output_dir,timing_offsets_dict, timing_constant_set, slow_control_stable_channels_set)
     end = time.time()
     print(f"Elapsed time: {end - start:.3f} seconds")
-    # add_timing_constants(["/eos/experiment/wcte/data/2025_commissioning/offline_data_vme_match/WCTE_offline_R2370S0_VME2005.root"], 2370, "/afs/cern.ch/user/l/lcook/user_data/test")
