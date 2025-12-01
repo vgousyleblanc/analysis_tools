@@ -162,6 +162,7 @@ class BeamAnalysis:
             "beamline_pmt_tdc_ids",
             "beamline_pmt_qdc_charges",
             "beamline_pmt_qdc_ids",
+            "spill_counter"
         ]
 
         #low number of entries for testing
@@ -206,6 +207,9 @@ class BeamAnalysis:
         event_id = []
         ref0_times = []
         ref1_times = []
+        
+        #Also save the spill number for that event
+        spill_number = []
 
 
         nEvents = len(data[branches[0]])
@@ -337,6 +341,9 @@ class BeamAnalysis:
             act5_l.append(pe_dict.get(22, 0))
             act5_r.append(pe_dict.get(23, 0))
             
+            spill_id = data["spill_counter"][evt_idx]
+            spill_number.append(spill_id)
+            
             
 #             TOF_0.append(pe_dict.get(48, 0))
 #             TOF_1.append(pe_dict.get(49, 0))
@@ -433,6 +440,7 @@ class BeamAnalysis:
             "is_kept": is_kept,
             "ref0_time":ref0_times,
             "ref1_time":ref1_times,
+            "spill_number":spill_number,
             
         }
         
@@ -2852,6 +2860,7 @@ class BeamAnalysis:
         self.pdf_global.savefig(fig)
         plt.close()
         
+        
                    
     def output_beam_ana_to_root(self, output_name = None):
         ''''Output the results of the beam analysis as a root file with three branches, the 1D run information (number, nominal momentum, refractive index, whether ACT5 is in the beam line), the 1D results (mean measured [T0T1] TOF and momentum for each particle type with EOM and std for the TOF only), number of triggers kept, total number of triggers'''
@@ -3130,6 +3139,110 @@ class BeamAnalysis:
         fig.suptitle(f"Triggers not tagged by ACT20 with ACT35 > {cut_line} PE", weight = "bold", fontsize = 18)
         self.pdf_global.savefig(fig)
         plt.close()
+        
+        
+        
+    def plot_number_particles_per_POT(self):
+        '''This function plots the number of particles of each type recorded per spill and then per POT, required for the beam flux paper and represent an example of how to read POT information from Arturo's readings of the nxcals CERN database'''
+        
+#         #making a complete dataframe with all of the entries, including the rejected ones 
+#         df_comp = self.df_all.copy()
+        
+#         for col in self.df.columns:
+#             if col not in df_comp.columns:
+#                 df_comp[col] = np.nan  # create empty column first if you want aligned length
+#                 df_comp.loc[df_comp["is_kept"], col] = self.df[col].values
+        
+        spill_index = [s for s in self.df["spill_number"].unique()]
+        number_e_per_spill = np.array([sum(self.df[self.df["spill_number"]==s]["is_electron"]) for s in self.df["spill_number"].unique()])
+        number_mu_per_spill = np.array([sum(self.df[self.df["spill_number"]==s]["is_muon"]) for s in self.df["spill_number"].unique()])
+        number_pi_per_spill = np.array([sum(self.df[self.df["spill_number"]==s]["is_pion"]) for s in self.df["spill_number"].unique()])
+        number_p_per_spill = np.array([sum(self.df[self.df["spill_number"]==s]["is_proton"]) for s in self.df["spill_number"].unique()])
+        
+        number_rejected_per_spill = np.array([len(self.df_all[(self.df_all["spill_number"]==s) & (self.df_all["is_kept"]==0)]) for s in self.df_all["spill_number"].unique()])
+        spill_index_all = [s for s in self.df_all["spill_number"].unique()]
+        
+        
+        
+        
+        fig, ax = plt.subplots(figsize = (8, 6))
+        ax.plot(spill_index, number_e_per_spill, "x", label = "Electrons")
+        ax.plot(spill_index, number_mu_per_spill, "x", label = "Muons")
+        ax.plot(spill_index, number_pi_per_spill, "x", label = "Pions")
+        ax.plot(spill_index, number_p_per_spill, "x", label = "Protons")
+        ax.plot(spill_index_all, number_rejected_per_spill, "x", label = "Rejected triggers", color =  "darkgray")
+        ax.set_ylabel("Number of particles", fontsize = 20)
+        ax.set_xlabel("Spill index", fontsize = 20)
+        ax.legend(fontsize = 16)
+        ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c)", fontsize = 20)
+        self.pdf_global.savefig(fig)
+        plt.close()
+        
+        ## Here read the number of POT per spill from the nxcals data 
+        #The spills are always in order, we do not need to re-arrange them, in principle
+        try:
+            df_pot = pd.read_csv(f"/eos/experiment/wcte/user_data/fiorenti/nxcals/run_{self.run_number}_pot.csv", header = 0)
+        except:
+            return 0
+        print(df_pot)
+        
+        
+#         if len(df_pot) != len(spill_index):
+#             print(f"There is a discrepancy between the number of recorded spills and the number of spills ({len(spill_index)}) according to the nxcals data ({len(df_pot)}), please check.")
+#             raise Error
+                  
+        n_pot_per_trigger = np.array(df_pot["POT0"])
+        
+        print(n_pot_per_trigger)
+        n_pot_per_trigger = n_pot_per_trigger[0:len(spill_index)]
+        
+        print(number_e_per_spill, n_pot_per_trigger, number_e_per_spill/n_pot_per_trigger)
+        
+
+        #decide that there are a bin for each ten spills
+#         n_bins = int(max(spill_index)/10)
+        n_bins = np.linspace(0, 35, 100)
+        n_bins_narrow = np.linspace(0, 35, 300)
+        fig, ax = plt.subplots(figsize = (8, 6))
+        
+        
+        bin_centers = (n_bins[1:]+n_bins[:-1])/2
+        
+        h_e, _, _ = ax.hist(number_e_per_spill/n_pot_per_trigger, bins = n_bins, label = "Electrons", color = "blue", histtype = "step")
+        popt, pcov = fit_gaussian(h_e, bin_centers)
+        plt.plot(n_bins_narrow, gaussian(n_bins_narrow, *popt), '--', color = "blue", label = f"Gaussian fit: mean {popt[1]:.2f}, std {popt[2]:.2f}")
+        
+        
+        h_mu, _, _ = ax.hist(number_mu_per_spill/n_pot_per_trigger, bins = n_bins, label = "Muons", color = "orange", histtype = "step")
+        popt, pcov = fit_gaussian(h_mu, bin_centers)
+        plt.plot(n_bins_narrow, gaussian(n_bins_narrow, *popt), '--', color = "orange", label = f"Gaussian fit: mean {popt[1]:.2f}, std {popt[2]:.2f}")
+        
+        h_pi, _, _ = ax.hist(number_pi_per_spill/n_pot_per_trigger, bins = n_bins, label = "Pions", color = "green", histtype = "step")
+        
+        popt, pcov = fit_gaussian(h_pi, bin_centers)
+        plt.plot(n_bins_narrow, gaussian(n_bins_narrow, *popt), '--', color = "green", label = f"Gaussian fit: mean {popt[1]:.2f}, std {popt[2]:.2f}")
+        
+        h_p, _, _ = ax.hist(number_p_per_spill/n_pot_per_trigger, bins = n_bins, label = "Protons", color = "red", histtype = "step")
+        popt, pcov = fit_gaussian(h_p, bin_centers)
+        plt.plot(n_bins_narrow, gaussian(n_bins_narrow, *popt), '--', color = "red", label = f"Gaussian fit: mean {popt[1]:.2f}, std {popt[2]:.2f}")
+        
+        ax.set_xlabel("Number of particles per 10^10 POT", fontsize = 20)
+        ax.set_ylabel("Number of spills", fontsize = 20)
+        ax.legend(fontsize = 14)
+        ax.grid()
+        ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c)", fontsize = 20)
+        self.pdf_global.savefig(fig)
+        plt.close()
+                  
+                  
+        
+        
+        
+        
+        
+        
+        
+        
         
 
         
