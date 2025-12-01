@@ -13,9 +13,12 @@ If using on lxplus you will need to setup this in a python virtual environment
 ##  WaveformProcessing
 
 Waveform processing contains a copy of the CFD used in the test stand repository
-WaveformProcessing.cfd_teststand_method() processes the CFD using that method returning 
+WaveformProcessingTeststand.cfd_teststand_method() processes the CFD using that method returning 
 the charge and the time for a pulse in that waveform - including non-linearity corrections 
 for both
+
+Additionally the same CFD and charge calculation method used online by the mPMT is included 
+in WaveformProcessingmPMT the versions to run on single waveforms and vectorised versions to run on arrays of waveforms are given 
 
 ## do_pulse_finding and do_pulse_finding_vect
 
