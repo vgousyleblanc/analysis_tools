@@ -110,6 +110,8 @@ if __name__ == "__main__":
                 "hit_charge": "var * float64",
                 "hit_card": "var * int32",
                 "hit_chan": "var * int32",
+                "hit_mpmt_slot": "var * int32",
+                "hit_pmt_pos": "var * int32",
                 "hit_waveform_index": "var * int32",
                 "hit_peak_sample": "var * int32",
                 "readout_number": "int32",
@@ -139,6 +141,8 @@ if __name__ == "__main__":
                     batch_hit_charge = []
                     batch_hit_card = []
                     batch_hit_chan = []
+                    batch_hit_slot = []
+                    batch_hit_pmt_pos = []
                     batch_hit_waveform_index = []
                     batch_hit_peak_sample = []
                     batch_event_readout_number = [] 
@@ -155,6 +159,8 @@ if __name__ == "__main__":
                         wf_chan    = event["pmt_waveform_pmt_channel_ids"]
                         wf_card    = event["pmt_waveform_mpmt_card_ids"]
                         wf_chan    = event["pmt_waveform_pmt_channel_ids"]
+                        wf_mpmt_slot    = event["pmt_waveform_mpmt_slot_ids"]
+                        wf_pmt_pos    = event["pmt_waveform_pmt_position_ids"]
                         event_readout_number = event["readout_number"]
                         
                         try:
@@ -171,9 +177,14 @@ if __name__ == "__main__":
                         wf_process_card = np.array(wf_card)
                         wf_process_chan = np.array(wf_chan)
                         
+                        wf_process_mpmt_slot = np.array(wf_mpmt_slot)
+                        wf_process_pmt_pos = np.array(wf_pmt_pos)
+
                         #outputs a list of hits and the wf_index of the hits hit_wf_index
                         start = time.time()
                         found_hit_charge, found_hit_time, found_hit_card, found_hit_chan, hit_wf_index, hit_local_indices = do_hit_processing(wf_process,wf_process_start,wf_process_card,wf_process_chan,wf_length)
+                        found_hit_mpmt_slot = wf_process_mpmt_slot[hit_wf_index]
+                        found_hit_pmt_pos = wf_process_pmt_pos[hit_wf_index]
                         end = time.time()
                         if iev==234: print(f"Estimated hit processing: {batch_size*(end - start):.6f} seconds")
                         
@@ -185,7 +196,8 @@ if __name__ == "__main__":
                         batch_hit_waveform_index.append(hit_wf_index.tolist())
                         batch_hit_peak_sample.append(hit_local_indices.tolist())
                         batch_event_readout_number.append(int(event_readout_number))
-                        
+                        batch_hit_slot.append(found_hit_mpmt_slot.tolist())
+                        batch_hit_pmt_pos.append(found_hit_pmt_pos.tolist())
                         end = time.time()
                         if iev==234: print(f"Time append processing: {1000.0*(end - start):.6f} seconds")
                     #finished processing batch
@@ -194,11 +206,13 @@ if __name__ == "__main__":
                     batch_hit_charge = ak.Array(batch_hit_charge)
                     batch_hit_card = ak.Array(batch_hit_card)
                     batch_hit_chan = ak.Array(batch_hit_chan)
+                    batch_hit_slot = ak.Array(batch_hit_slot)
+                    batch_hit_pmt_pos = ak.Array(batch_hit_pmt_pos)
                     # print("Batch batch_hit_chan",ak.type(batch_hit_chan))
                     batch_hit_waveform_index = ak.Array(batch_hit_waveform_index)
                     batch_hit_peak_sample = ak.Array(batch_hit_peak_sample)
                     batch_event_readout_number = np.array(batch_event_readout_number, dtype=np.int32)
-
+                    
                     #find trigger time for each event
                     batch_event_trigger_time = ak.firsts(batch_hit_time[(batch_hit_card==131) & (batch_hit_chan==0)])
                     missing_trigger_mask = ak.is_none(batch_event_trigger_time).to_numpy()
@@ -217,6 +231,8 @@ if __name__ == "__main__":
                         "hit_charge": (batch_hit_charge),
                         "hit_card": (batch_hit_card),
                         "hit_chan": (batch_hit_chan),
+                        "hit_mpmt_slot": (batch_hit_slot),
+                        "hit_pmt_pos": (batch_hit_pmt_pos),
                         "hit_waveform_index": (batch_hit_waveform_index),
                         "hit_peak_sample": (batch_hit_peak_sample),
                         "readout_number": batch_event_readout_number,
