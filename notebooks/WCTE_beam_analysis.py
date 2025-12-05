@@ -5,7 +5,10 @@ This code is the default way of identifying particles using the beam monitor. It
 import numpy as np
 import importlib
 #this is the file with the necessary functions for performing PID 
-import beam_monitors_pid as bm
+import sys
+#path to analysis tools - change with where your path is, though it might just work with mine on eos
+sys.path.append("/eos/user/a/acraplet/analysis_tools/")
+from analysis_tools import BeamAnalysis # as bm
 
 #Step 0, decide what cut to apply:
 
@@ -60,7 +63,7 @@ filename = f"beam_analysis_output_R{run_number}_full.root"
 
 
 #Set up a beam analysis class 
-ana = bm.BeamAnalysis(run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5)
+ana = BeamAnalysis(run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5)
 
 #Store into memory the number of events desired
 ana.open_file(n_events)
@@ -96,11 +99,6 @@ ana.tag_muons_pions_ACT35()
 # Study the number of particles produced per spill and per POT
 #TODO: move to later on in the code. 
 ana.plot_number_particles_per_POT()
-
-#Step X: end_analysis, necessary to cleanly close files 
-ana.end_analysis()
-
-input("Wait")
 
 #Step 7: estimate the momentum for each particle from the T0-T1 TOF
 # first measure the particle TOF, make the plot
