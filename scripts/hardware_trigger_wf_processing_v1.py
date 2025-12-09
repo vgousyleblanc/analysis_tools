@@ -10,7 +10,29 @@ from analysis_tools.pulse_finding import do_pulse_finding_vect
 import time
 import argparse
 import os
+import subprocess
 
+def get_git_descriptor():
+    try:
+        # Get commit hash / tag
+        desc = subprocess.check_output(
+            ["git", "describe", "--always", "--tags"],
+            stderr=subprocess.STDOUT
+        ).decode().strip()
+
+        # Check if there are uncommitted changes (dirty repo)
+        status = subprocess.check_output(
+            ["git", "status", "--porcelain"],
+            stderr=subprocess.STDOUT
+        ).decode().strip()
+        if status:
+            raise Exception("Repository has uncommitted changes")
+
+        return desc
+
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError("Git command failed") from e
+    
 def do_hit_processing(waveforms, waveform_times, waveform_cards, waveform_channels, wf_length):
     
     if not isinstance(waveforms, np.ndarray):
@@ -103,6 +125,11 @@ def determine_short_waveform_list(wf_waveforms,wf_card,wf_chan):
     return np.array(short_waveform_list)
 
 if __name__ == "__main__":
+    
+    git_hash = get_git_descriptor()
+    print("Git hash:",git_hash)
+    input()
+    
     parser = argparse.ArgumentParser(description="Add a new branch to a ROOT TTree in batches.")
     parser.add_argument("-i","--input_files",nargs='+', help="Path to input ROOT file or files")
     # parser.add_argument("-r","--run_number", help="Run Number")
@@ -139,7 +166,8 @@ if __name__ == "__main__":
             
             config_tree = outfile.mktree("Configuration", {
                 "bad_channel_mask_card_chan": "var * int32",
-                "assumed_waveform_length": "int32"
+                "assumed_waveform_length": "int32",
+                "git_hash": "string"
             })
             
             batch_size = 1000
@@ -163,7 +191,8 @@ if __name__ == "__main__":
                 
                 config_tree.extend({
                     "bad_channel_mask_card_chan": ak.Array([short_waveform_list]),
-                    "assumed_waveform_length": [64]
+                    "assumed_waveform_length": [64],
+                    "git_hash": [git_hash]
                 })
                 
                 #open the input file in batches
