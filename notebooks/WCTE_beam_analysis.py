@@ -59,7 +59,7 @@ run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5 = 1602, 7
 
 
 #output_filename
-filename = f"beam_analysis_output_R{run_number}_full.root"
+filename = f"../data/beam_data_analysis/beam_analysis_R{run_number}.root"
 
 
 #Set up a beam analysis class 
@@ -79,23 +79,9 @@ ana.adjust_1pe_calibration()
 ana.tag_protons_TOF()
 #TODO: identify protons that produce knock-on electrons
 
-#Step 1: study the beam structure
-ana.study_beam_structure()
-
-#Step X: end_analysis, necessary to cleanly close files 
-ana.end_analysis()
-
-input("wait")
 
 #Step 4: tag electrons using ACT0-2 finding the minimum in the cut line
-#If we want a tighter cut, add a coefficient of reduction of the optimal cut line (e.g. 5%) to remove more electrons (and also some more muons and pions) 
-tightening_factor = 0 #in units of percent of the cut line, how much you want to reduce the cut position to increase the purity of the muon/pion sample
-#this is interseting but not really resolving the issue of electron contamination: leave at 0% for now
-ana.tag_electrons_ACT02(tightening_factor)
-
-#instead use ACT35 to tag electrons (when depositing more than cutline PE, for now TBD by analyser)
-if tag_electron_ACT35:
-    ana.tag_electrons_ACT35(cut_line)
+ana.tag_electrons_ACT02()
 
 #Step 5: check visually that the electron and proton removal makes sense in ACT35
 ana.plot_ACT35_left_vs_right()
@@ -106,49 +92,13 @@ ana.plot_ACT35_left_vs_right()
 #A more thorough analysis might want to remove events that are close to the cut line for a higher purity
 ana.tag_muons_pions_ACT35()
 
-# Study the number of particles produced per spill and per POT
-#TODO: move to later on in the code. 
-ana.plot_number_particles_per_POT()
-
-#Step 7: estimate the momentum for each particle from the T0-T1 TOF
-# first measure the particle TOF, make the plot
-#This corrects any offset in the TOF (e.g. from cable length) that can cause the TOF 
-#of electrons to be different from L/c This has to be calibrated to give meaningful momentum 
-#estimates later on
-ana.measure_particle_TOF()
-
 ### here check the TOF distributions
 ana.plot_all_TOFs()
-
-
-
-###### Check the events that aren't tagged by ACT02 but that look electron-like in ACT35
-#Useful for beam analyses, it is useful to already have computed the TOF to help PID, esp. at low momentum 
-ana.study_electrons(45)
-
-
-##### To speed up the checks, you can interrupt the analysis at this point and look at the plots, note that the analysis has to be "ended" for the plots to be visible
-# ana.end_analysis()
-# input("please check the plot")
-
-##########################################################
-#This function extimates both the mean momentum for each particle type and for each trigger
-#We take the the error on the tof for each trigger is the resolution of the TS0-TS1 measurement
-#Taken as the std of the gaussian fit to the electron TOF
-#This is still a somewhat coarse way of estimating uncertainty... 
-#This also saves the momentum after exiting the beam window, recosntructed using the same techinque
-#Final momentum is after exiting through the beam pipe
-#There is a little offset in the total length (1cm) found through tunning, needs more precise length calculation
-ana.estimate_momentum(-1.012e-2, True)
-
-############################################################
-#Visually, it looks like all the particles reach the TOF
-ana.plot_TOF_charge_distribution()
 
 
 #Step X: end_analysis, necessary to cleanly close files 
 ana.end_analysis()
 
 #Output to a root file
-ana.output_beam_ana_to_root(filename)
+ana.output_to_root(filename)
 

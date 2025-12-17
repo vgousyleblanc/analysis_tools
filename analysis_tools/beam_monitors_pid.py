@@ -356,7 +356,7 @@ class BeamAnalysis:
             "event_q_t5_missing_tdc": 2,
             "event_q_hc_hit": 3,
             "event_q_t4_missing_qdc": 4,
-            "event_q_no_qdc_entry": 5
+            "t5_more_than_one_hit": 5
         }
         
         
@@ -591,6 +591,7 @@ class BeamAnalysis:
             event_q_t5_missing_tdc = (len(t5_bar_means) == 0)
             # instead of using the mean, take the erliest hit. 
             t5_earliest_time = min(t5_bar_means) if t5_bar_means else None
+            t5_more_than_one_hit = (len(t5_bar_means)>1)
             #the multiplicity shows how many bars are being hit, this could be a useful way to identify multiple particle events
 #             if t5_bar_multiplicity is not None:
             t5_bar_multiplicity.append(len(t5_bar_means))
@@ -673,7 +674,7 @@ class BeamAnalysis:
                 "event_q_t5_missing_tdc": event_q_t5_missing_tdc,
                 "event_q_hc_hit": event_q_hc_hit,
                 "event_q_t4_missing_qdc": event_q_t4_missing_qdc,
-                "event_q_no_qdc_entry": event_q_no_qdc_entry
+                "t5_more_than_one_hit": t5_more_than_one_hit
             }
             
             bitmask = write_event_quality_mask(flags, self.reference_flag_map)
@@ -737,6 +738,7 @@ class BeamAnalysis:
             "ref1_time":ref1_times,
             "spill_number":spill_number,
             "evt_quality_bitmask":evt_quality_bitmask,
+            "qdc_failure":event_q_no_qdc_entry,
           
         }
         
@@ -3296,6 +3298,114 @@ class BeamAnalysis:
             results["n_triggers_kept"] =  np.array([sum(self.df_all["is_kept"])], dtype=np.float64) 
             
             results["n_triggers_total"] =  np.array([len(self.df_all["is_proton"]) ], dtype=np.float64)  
+            
+            
+            f["scalar_results"] = results 
+            
+            print(f"Saved output file to {output_name}")
+            
+            
+            
+            
+    def output_to_root(self, output_name = None):
+        ''''Output the results of the beam analysis as a root file with three branches, the 1D run information (number, nominal momentum, refractive index, whether ACT5 is in the beam line), the 1D results (cut lines, number of triggers kept, total number of triggers) and the relevant varaibles '''
+        if output_name == None:
+            output_name = f"beam_analysis_output_R{self.run_number}.root"
+            
+            
+        for col in self.df.columns:
+            if col not in self.df_all.columns:
+                if col not in ["is_muon", "is_electron", "is_pion", "is_proton", "is_deuteron", "is_helium3", "is_tritium", "is_lithium6"]:
+                    self.df_all[col] = np.nan  # create empty column first if you want aligned length
+                    self.df_all.loc[self.df_all["is_kept"], col] = self.df[col].values
+
+        
+        self.df_all["is_kept"] = self.df_all["is_kept"].astype(np.int32)
+        
+        
+        #changing the names of the variables so they are more clear 
+        rename_map = {
+            "tof": "tof_t0t1",
+            "t4_l": "t4_l_time",
+            "t4_r": "t4_r_time",
+            "act0_time_l": "act0_l_time",
+            "act0_time_r": "act0_r_time",
+            "act0_l": "act0_l_charge",
+            "act1_l": "act1_l_charge",
+            "act2_l": "act2_l_charge",
+            "act3_l": "act3_l_charge",
+            "act4_l": "act4_l_charge",
+            "act5_l": "act5_l_charge",
+            "act0_r": "act0_r_charge",
+            "act1_r": "act1_r_charge",
+            "act2_r": "act2_r_charge",
+            "act3_r": "act3_r_charge",
+            "act4_r": "act4_r_charge",
+            "act5_r": "act5_r_charge",
+            "mu_tag_l": "mu_tag_l_charge",
+            "mu_tag_r": "mu_tag_r_charge",
+         }
+        
+        self.df_all = self.df_all.rename(columns=rename_map)
+
+        
+
+       # --- Convert DataFrame to dictionary of numpy arrays ---
+        branches = {col: self.df_all[col].to_numpy() for col in self.df_all.columns}
+
+        # --- Create ROOT file and save the tree ---
+        with uproot.recreate(output_name) as f:
+            # Write the main TTree
+            f["beam_analysis"] = branches
+
+            # Write scalar metadata as a separate tree (recommended)
+            f["run_info"] = {
+                "run_number": np.array([self.run_number], dtype=np.int32),
+                "run_momentum": np.array([self.run_momentum], dtype=np.float64),          
+                "n_eveto": np.array([self.n_eveto], dtype=np.float64),
+                "n_tagger": np.array([self.n_tagger], dtype=np.float64),
+                "there_is_ACT5":np.array([self.there_is_ACT5], dtype = np.int32),
+
+            }
+
+
+            #save as a separate branch the 1d results of interest
+
+            results = {
+                "act_eveto_cut":np.array([self.eveto_cut], dtype=np.float64),
+                "act_tagger_cut":np.array([self.act35_cut_pi_mu], dtype=np.float64),
+                "proton_tof_cut":np.array([proton_tof_cut], dtype=np.float64),
+                "deuteron_tof_cut":np.array([deuteron_tof_cut], dtype=np.float64),
+                "mu_tag_cut": np.array([self.mu_tag_cut], dtype=np.float64),
+                "using_mu_tag_cut": np.array([self.using_mu_tag_cut], dtype=np.float64),
+                
+#                 "pion_purity":np.array([self.pion_purity], dtype=np.float64),
+#                 "pion_efficiency":np.array([self.pion_efficiency], dtype=np.float64),
+#                 "muon_purity":np.array([self.muon_purity], dtype=np.float64),
+#                 "muon_efficiency":np.array([self.muon_efficiency], dtype=np.float64),
+            }
+#             for prefix, d in [("tof_mean", self.particle_tof_mean),
+#                   ("tof_std", self.particle_tof_std),
+#                   ("tof_eom", self.particle_tof_eom),
+#                   ("momentum_mean", self.particle_mom_mean),
+#                   ("momentum_eom", self.particle_mom_mean_err),
+#                   ("momentum_after_beam_window_mean", self.particle_mom_mean),
+#                   ("momentum_after_beam_window_eom", self.particle_mom_mean_err)]:
+#                 for key, value in d.items():
+#                     results[f"{prefix}_{key}"] = np.array([value], dtype=np.float64)
+
+                    
+#             results["n_electrons"] = np.array([sum(self.df_all["is_electron"]) ], dtype=np.float64) 
+#             results["n_muons"] =  np.array([sum(self.df_all["is_muon"])], dtype=np.float64) 
+#             results["n_pions"] =  np.array([sum(self.df_all["is_pion"])], dtype=np.float64)   
+#             results["n_protons"] =  np.array([sum(self.df_all["is_proton"])], dtype=np.float64)   
+#             results["n_deuterons"] =   np.array([sum(self.df_all["is_deuteron"])], dtype=np.float64)   
+#             results["n_helium3"] =   np.array([sum(self.df_all["is_helium3"])], dtype=np.float64)   
+#             results["n_lithium6"] =   np.array([sum(self.df_all["is_lithium6"])], dtype=np.float64)   
+#             results["n_tritium"] =   np.array([sum(self.df_all["is_tritium"])], dtype=np.float64)   
+            results["n_triggers_kept"] =  np.array([sum(self.df_all["is_kept"])], dtype=np.float64) 
+            
+            results["n_triggers_total"] =  np.array([len(self.df_all["is_kept"]) ], dtype=np.float64)  
             
             
             f["scalar_results"] = results 
