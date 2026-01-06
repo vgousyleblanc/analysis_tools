@@ -20,7 +20,7 @@ import os, shutil, subprocess, time, hashlib
 
 from collections import defaultdict
 
-
+from read_beam_detector_distances import DetectorDB as db
 
 #Helper functions for file reading, written by Sahar
 def stage_local(src_eos_path: str, min_free_gb=20, min_bytes=1_000_000) -> str:
@@ -1813,6 +1813,8 @@ class BeamAnalysis:
         else:
             ACT35_thickness = (ACT35_thick_per_box + 0.34e-3) * 2
 
+        #Improved method for detector distances and dimensions: use Bruno's yaml file.  
+           
         #Trigger scintillators assumed to be all the same thickness, from Bruno's slides
         t0_thickness = 6.4e-3 #mm to m
         t4_thickness = 6.4e-3 #mm to m

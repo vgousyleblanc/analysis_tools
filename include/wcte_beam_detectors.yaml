@@ -1,0 +1,47 @@
+meta:
+  schema: wcte_beam_detectors_v1
+  units:
+    length: m
+    density: g_per_cm3
+
+materials_library:
+  scintillator_ps:
+    name: "Polystyrene scintillator"
+    density_g_cm3: 1.032
+  mylar:
+    name: "PET (Mylar)"
+    density_g_cm3: 1.39
+  vinyl_film:
+    name: "PVC (vinyl film)"
+    density_g_cm3: 1.30
+
+detectors:
+  # Note: mylar and vinyl values below are thickness per face.
+  # If the particle crosses both faces, multiply those thicknesses by 2 in the material budget.
+  T0:
+    center_m: 0.064
+    layers_m:
+      scintillator: 0.0064
+      mylar: 0.00005
+      vinyl: 0.003
+
+  T4:
+    center_m: 3.0636
+    layers_m:
+      scintillator: 0.0064
+      mylar: 0.00005
+      vinyl: 0.003
+
+  T1:
+    center_m: 4.4475
+    layers_m:
+      scintillator: 0.0064
+      mylar: 0.00005
+      vinyl: 0.003
+
+  T5:
+    center_m: 6.5306
+    layers_m:
+      scintillator: 0.0064
+      mylar: 0.00005
+      vinyl: 0.003
