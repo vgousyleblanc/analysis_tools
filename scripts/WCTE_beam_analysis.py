@@ -19,14 +19,14 @@ n_events = -1
 #Step 1, read in the data 
 
 #### Example 1: medium momentum negative polarity
-run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5 = 1478, -410, 1.01, 1.06, False
+# run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5 = 1478, -410, 1.01, 1.06, False
 
 ### Example 2: relatively high momentum, positive polarity
 # run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5 = 1610, 760, 1.01, 1.015, True
 
 
 ##### Example 3: relatively high momentum, positive polarity
-# run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5 = 1602, 770, 1.01, 1.015, True
+run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5 = 1602, 770, 1.01, 1.015, True
 
 ######## Example 4: relatively high momentum positive polarity
 # run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5 = 1606,780, 1.01,1.015,True
@@ -92,9 +92,22 @@ ana.plot_ACT35_left_vs_right()
 #A more thorough analysis might want to remove events that are close to the cut line for a higher purity
 ana.tag_muons_pions_ACT35()
 
+#This corrects any offset in the TOF (e.g. from cable length) that can cause the TOF 
+#of electrons to be different from L/c This has to be calibrated to give meaningful momentum 
+#estimates later on
+ana.measure_particle_TOF()
+
 ### here check the TOF distributions
 ana.plot_all_TOFs()
 
+#This function extimates both the mean momentum for each particle type and for each trigger
+#We take the the error on the tof for each trigger is the resolution of the TS0-TS1 measurement
+#Taken as the std of the gaussian fit to the electron TOF
+#This is still a somewhat coarse way of estimating uncertainty... 
+#This also saves the momentum after exiting the beam window, recosntructed using the same techinque
+#Final momentum is after exiting through the beam pipe
+#There is a little offset in the total length (1cm) found through tunning, needs more precise length calculation
+ana.estimate_momentum(-1.012e-2, True)
 
 #Step X: end_analysis, necessary to cleanly close files 
 ana.end_analysis()
