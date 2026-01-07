@@ -88,6 +88,41 @@ class DetectorDB:
             raise ValueError(f"Detector '{det_name}' is missing 'center_m'.")
 
         return float(center)
+    
+    def _thickness(self, det_name: str) -> float:
+        """
+        Internal helper method to retrieve the thickness of a TS detector 
+
+        Parameters
+        ----------
+        det_name : str
+            Name of the detector (e.g. 'T0', 'T4', 'T5').
+
+        Returns
+        -------
+        float
+            Thickness of the detector in meters.
+
+        Raises
+        ------
+        KeyError
+            If the detector name is not defined in the YAML.
+        ValueError
+            If the detector does not define 'center_m'.
+        """
+        dets = self.data["detectors"]
+
+        # Check that the requested detector exists
+        if det_name not in dets:
+            available = ", ".join(sorted(dets.keys()))
+            raise KeyError(f"Unknown detector '{det_name}'. Available: {available}")
+
+        # Extract the center position
+        layers = dets[det_name].get("layers_m", None)
+        if layers is None:
+            raise ValueError(f"Detector '{det_name}' is missing 'layers_m'.")
+
+        return layers
 
     def distance_m(self, a: str, b: str) -> float:
         """
@@ -107,7 +142,44 @@ class DetectorDB:
             Absolute distance between detector centers in meters.
         """
         return abs(self._center(a) - self._center(b))
-
+    
+    
+    def get_thickness_m(self, det:str, mat:str) -> float:
+        """
+        Returns the thickness of a given material (mat) layer for a detector (det) in units of meter
+        
+        Parameters
+        ----------
+        det: the detector name
+        mat: the material name, should be "scintillator"; "mylar" or "vinyl" for TS detectors
+        
+        """
+        thickness_dict = self._thickness(det)
+        
+        if mat not in thickness_dict.keys():
+            raise ValueError(f"Material '{mat}' is missing in 'layers_m': {thickness_dict} for detector {det}.")
+        
+        return thickness_dict[mat]
+    
+    def get_total_thickness_m(self, det:str) -> float:
+        """
+        Returns the total thickness of detector (det) in units of meter
+        
+        Parameters
+        ----------
+        det: the detector name
+        
+        """
+        thickness_dict = self._thickness(det)
+        
+        tot_thickness = 0
+        
+        for mat in thickness_dict.keys():
+            tot_thickness += thickness_dict[mat]
+        
+        
+        
+        return tot_thickness
 
 def detector_distance_m(yaml_path: Union[str, Path], det_a: str, det_b: str) -> float:
     """

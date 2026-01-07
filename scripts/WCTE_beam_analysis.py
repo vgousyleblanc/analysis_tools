@@ -7,13 +7,13 @@ import importlib
 #this is the file with the necessary functions for performing PID 
 import sys
 #path to analysis tools - change with where your path is, though it might just work with mine on eos
-sys.path.append("/eos/user/a/acraplet/analysis_tools/")
+sys.path.append("../") #neeed to acess the analysis_tools folded to acess
 from analysis_tools import BeamAnalysis # as bm
 # import cProfile
 
 
 #choose the number of events to read in, set to -1 if you want to read all events
-n_events = -1
+n_events = 10000#-1
 
 
 #Step 1, read in the data 
@@ -107,7 +107,7 @@ ana.plot_all_TOFs()
 #This also saves the momentum after exiting the beam window, recosntructed using the same techinque
 #Final momentum is after exiting through the beam pipe
 #There is a little offset in the total length (1cm) found through tunning, needs more precise length calculation
-ana.estimate_momentum(-1.012e-2, True)
+ana.estimate_momentum(verbose = True)
 
 #Step X: end_analysis, necessary to cleanly close files 
 ana.end_analysis()

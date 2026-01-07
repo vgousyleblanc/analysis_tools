@@ -20,7 +20,10 @@ import os, shutil, subprocess, time, hashlib
 
 from collections import defaultdict
 
-from read_beam_detector_distances import DetectorDB as db
+import sys
+# sys.path.append("/eos/user/a/acraplet/analysis_tools/")
+#the module for reading the yaml file with the detector distances and dimensions - from Bruno
+from .read_beam_detector_distances import DetectorDB as db
 
 #Helper functions for file reading, written by Sahar
 def stage_local(src_eos_path: str, min_free_gb=20, min_bytes=1_000_000) -> str:
@@ -306,7 +309,7 @@ class BeamAnalysis:
         
         
         #read the calibration file
-        with open('1pe_calibration.json', 'r') as file:
+        with open('../include/1pe_calibration.json', 'r') as file:
             calib_constants = json.load(file)
 
         # Access the calibration constants
@@ -1750,7 +1753,7 @@ class BeamAnalysis:
         return momentum, total_tof, total_length
     
     
-    def give_tof(self, particle, initial_momentum, n_eveto_group, n_tagger_group, there_is_ACT5, run_monentum, T_pair = "T0T1", additional_length = 0, verbose = True):
+    def give_tof(self, particle, initial_momentum, n_eveto_group, n_tagger_group, there_is_ACT5, run_monentum, T_pair = "T0T1", verbose = True):
         '''This function returns the T0-T1 TOF that a given particle would have as a function of its initial momentum, later to be compared with the recorded TOF for estimating the inital momentum. It is a stepper function that propagates the momentum at each step and adds up the total TOF, taking into account the momentum lost at each step'''
         #the default number of steps per material is 10 but we do modify it based on the material density
         #to speed up the process whilst keeping up the accuracy
@@ -1814,25 +1817,35 @@ class BeamAnalysis:
             ACT35_thickness = (ACT35_thick_per_box + 0.34e-3) * 2
 
         #Improved method for detector distances and dimensions: use Bruno's yaml file.  
+        
+        det_module = db.from_yaml("../include/wcte_beam_detectors.yaml")
+
            
         #Trigger scintillators assumed to be all the same thickness, from Bruno's slides
-        t0_thickness = 6.4e-3 #mm to m
-        t4_thickness = 6.4e-3 #mm to m
+        #This TS thickness is only the acrylic part 
+        t0_thickness =  det_module.get_thickness_m("T0", "scintillator") #6.4e-3 #mm to m
+        t4_thickness =  det_module.get_thickness_m("T1", "scintillator") #6.4e-3 #mm to m
+        TOF_thickness = det_module.get_thickness_m("T5", "scintillator") #6.4e-3
+        
+        T4_total_thickness = det_module.get_total_thickness_m("T4")
+        T1_total_thickness = det_module.get_total_thickness_m("T1")
 
         #Distance between the TS
-        L =  444.03e-2  #T0 to T1
-        L_t0t4 = 305.68e-2 - 5.67e-2/2  + additional_length   #Need to correct for 5.67cm offset
-        L_t4t1 = 143.38e-2 - 5.67e-2/2
+        L =  det_module.distance_m("T0", "T1")  #444.03e-2  #T0 to T1
+        L_t0t4 = det_module.distance_m("T0", "T4")  
+        #305.68e-2 - 5.67e-2/2  + additional_length   #Need to correct for 5.67cm offset
+        L_t4t1 = det_module.distance_m("T4", "T1")  #143.38e-2 - 5.67e-2/2
+        t1_TOF_distance = det_module.distance_m("T1", "T5")   #215.13e-2
+       
         
-        t1_TOF_distance = 215.13e-2
-        TOF_thickness = 6.4e-3
+        
         beam_window_thickness = 1.2e-3 #https://wcte.hyperk.ca/wg/simulation-and-analysis/meetings/2024/20241122/meeting/simulation-update-beam-pipe-and-camera-housing/pipe_housing_wcsim_20241122.pdf/view
 
 
         #simplification, consider all the air as a single blob split in half before and after the aerogels
         #The additional length is the air gap inside the ACTs * nACTs
 #         L_air_T4_to_T1 = L_t4t1 - ACT02_thickness - ACT35_thickness + additional_length #- 0.06 - 0.003  
-        L_air_T4_to_T1 = L_t4t1 - ACT02_thickness - ACT35_thickness#- 0.06 - 0.003  
+        L_air_T4_to_T1 = L_t4t1 - ACT02_thickness - ACT35_thickness - T4_total_thickness/2 - T1_total_thickness/2 #- 0.06 - 0.003  
         #0.06 is the default value, 0.003 is the fine tune based on momentum measurements, see Alie's slides: https://wcte.hyperk.ca/wg/beam/meetings/2025/20250922/meeting/momentum-estimation-from-tof/acraplet_20250922_wctebeam.pdf
 
 
@@ -2220,14 +2233,14 @@ class BeamAnalysis:
         return momentum_guess, err_mom
 
             
-    def estimate_momentum(self, additional_length = 0, verbose = False):
+    def estimate_momentum(self, verbose = False):
         '''This function is estimating the momentum for each trigger based on the pre-computed PID and the material budget in the beam line. It attemps at calculating errors as well'''
         
         momentum_points = np.linspace(170, 1900, 56)
         
-        init_mom, pion_mom, pion_tof = self.give_tof( "Pions", momentum_points,  self.n_eveto, self.n_tagger, self.there_is_ACT5, self.run_momentum, "T0T1",additional_length, verbose = verbose)
+        init_mom, pion_mom, pion_tof = self.give_tof( "Pions", momentum_points,  self.n_eveto, self.n_tagger, self.there_is_ACT5, self.run_momentum, "T0T1", verbose = verbose)
         
-        init_mom, muon_mom, muon_tof = self.give_tof( "Muons", momentum_points,  self.n_eveto, self.n_tagger, self.there_is_ACT5, self.run_momentum, "T0T1",additional_length, verbose = False)
+        init_mom, muon_mom, muon_tof = self.give_tof( "Muons", momentum_points,  self.n_eveto, self.n_tagger, self.there_is_ACT5, self.run_momentum, "T0T1", verbose = False)
         
   
         ##### Now extrapolate the mean momentum of muons and pion
@@ -2284,7 +2297,7 @@ class BeamAnalysis:
         except:
             print("")
                 
-        ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) \n Additional length = {additional_length} m", fontsize = 20)
+        ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c)", fontsize = 20)
 
         self.pdf_global.savefig(fig)
         plt.close()
@@ -2344,7 +2357,7 @@ class BeamAnalysis:
             momentum_points_proton = np.linspace(self.run_momentum * 0.7, 1900,48)
             
             
-            init_mom, proton_mom, proton_tof = self.give_tof( "Protons", momentum_points_proton,  self.n_eveto, self.n_tagger, self.there_is_ACT5, self.run_momentum, "T0T1", additional_length, verbose = False)
+            init_mom, proton_mom, proton_tof = self.give_tof( "Protons", momentum_points_proton,  self.n_eveto, self.n_tagger, self.there_is_ACT5, self.run_momentum, "T0T1", verbose = False)
             
         
 
@@ -2380,7 +2393,7 @@ class BeamAnalysis:
                 ax.set_ylim(min(proton_tof) * 0.98,max(proton_tof) * 1.04)
             except:
                 print("")
-            ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c)  \n Additional length = {additional_length} m", fontsize = 20)
+            ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c)", fontsize = 20)
             
             self.pdf_global.savefig(fig)
             plt.close()
@@ -2398,7 +2411,7 @@ class BeamAnalysis:
                 #we cannot go too low momentum, otherwise unphysical... 
                 momentum_points_helium3 = np.linspace(1500, 1900, 12)
 
-                init_mom, helium3_mom, helium3_tof = self.give_tof( "Helium3", momentum_points_helium3,  self.n_eveto, self.n_tagger, self.there_is_ACT5, self.run_momentum, "T0T1", additional_length, verbose = False)
+                init_mom, helium3_mom, helium3_tof = self.give_tof( "Helium3", momentum_points_helium3,  self.n_eveto, self.n_tagger, self.there_is_ACT5, self.run_momentum, "T0T1", verbose = False)
 
                 fig, ax = plt.subplots(figsize = (8, 6))
                 ax.plot(momentum_points_helium3, helium3_tof, color = "k", marker = "+", label = "Expected helium3 TOF")
@@ -2436,7 +2449,7 @@ class BeamAnalysis:
                 ax.legend(fontsize = 12)
                 ax.grid()
 #                 ax.set_ylim(min(helium3_tof_m) * 0.98,max(momentum_points_helium3) * 1.04)
-                ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c)  \n Additional length = {additional_length} m", fontsize = 20)
+                ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c)", fontsize = 20)
 
                 self.pdf_global.savefig(fig)
                 plt.close()
@@ -2449,7 +2462,7 @@ class BeamAnalysis:
             #we cannot go too low momentum, otherwise unphysical... 
             momentum_points_deuteron = np.linspace(0.75 * abs(self.run_momentum), 1.4 * abs(self.run_momentum),12)
             
-            init_mom, deuteron_mom, deuteron_tof = self.give_tof( "Deuteron", momentum_points_deuteron,  self.n_eveto, self.n_tagger, self.there_is_ACT5, self.run_momentum, "T0T1", additional_length, verbose = False)
+            init_mom, deuteron_mom, deuteron_tof = self.give_tof( "Deuteron", momentum_points_deuteron,  self.n_eveto, self.n_tagger, self.there_is_ACT5, self.run_momentum, "T0T1", verbose = False)
         
             fig, ax = plt.subplots(figsize = (8, 6))
             ax.plot(momentum_points_deuteron, deuteron_tof, color = "k", marker = "+", label = "Expected deuteron TOF")
@@ -2482,7 +2495,7 @@ class BeamAnalysis:
                 ax.set_ylim(min(deuteron_tof) * 0.98,max(deuteron_tof) * 1.04)
             except:
                 print("")
-            ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) \n Additional length = {additional_length} m", fontsize = 20)
+            ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c)", fontsize = 20)
 
             self.pdf_global.savefig(fig)
             plt.close()
@@ -2501,7 +2514,7 @@ class BeamAnalysis:
             #we cannot go too low momentum, otherwise unphysical... 
             momentum_points_tritium = np.linspace(0.4 * abs(self.run_momentum), 1.4 * abs(self.run_momentum),12)
 
-            init_mom, tritium_mom, tritium_tof = self.give_tof( "Tritium", momentum_points_tritium,  self.n_eveto, self.n_tagger, self.there_is_ACT5, self.run_momentum, "T0T1", additional_length, verbose = False)
+            init_mom, tritium_mom, tritium_tof = self.give_tof( "Tritium", momentum_points_tritium,  self.n_eveto, self.n_tagger, self.there_is_ACT5, self.run_momentum, "T0T1", verbose = False)
 
             fig, ax = plt.subplots(figsize = (8, 6))
             ax.plot(momentum_points_tritium, tritium_tof, color = "k", marker = "+", label = "Expected tritium TOF")
@@ -2539,7 +2552,7 @@ class BeamAnalysis:
             ax.legend(fontsize = 12)
             ax.grid()
 #                 ax.set_ylim(min(helium3_tof_m) * 0.98,max(momentum_points_helium3) * 1.04)
-            ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c)  \n Additional length = {additional_length} m", fontsize = 20)
+            ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c)", fontsize = 20)
 
             self.pdf_global.savefig(fig)
             plt.close()
@@ -2550,7 +2563,7 @@ class BeamAnalysis:
             #we cannot go too low momentum, otherwise unphysical... 
             momentum_points_lithium6 = np.linspace(2000, 5000, 12)
 
-            init_mom, lithium6_mom, lithium6_tof = self.give_tof( "Lithium6", momentum_points_lithium6,  self.n_eveto, self.n_tagger, self.there_is_ACT5, self.run_momentum, "T0T1", additional_length, verbose = False)
+            init_mom, lithium6_mom, lithium6_tof = self.give_tof( "Lithium6", momentum_points_lithium6,  self.n_eveto, self.n_tagger, self.there_is_ACT5, self.run_momentum, "T0T1", verbose = False)
 
             fig, ax = plt.subplots(figsize = (8, 6))
             ax.plot(momentum_points_lithium6, lithium6_tof, color = "k", marker = "+", label = "Expected lithium6 TOF")
@@ -2588,7 +2601,7 @@ class BeamAnalysis:
             ax.legend(fontsize = 12)
             ax.grid()
 #                 ax.set_ylim(min(helium3_tof_m) * 0.98,max(momentum_points_helium3) * 1.04)
-            ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c)  \n Additional length = {additional_length} m", fontsize = 20)
+            ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c)", fontsize = 20)
 
             self.pdf_global.savefig(fig)
             plt.close()
@@ -3361,15 +3374,16 @@ class BeamAnalysis:
         if output_name == None:
             output_name = f"beam_analysis_output_R{self.run_number}.root"
             
-            
+           
         for col in self.df.columns:
             if col not in self.df_all.columns:
                 if col not in ["is_muon", "is_electron", "is_pion", "is_proton", "is_deuteron", "is_helium3", "is_tritium", "is_lithium6"]:
                     self.df_all[col] = np.nan  # create empty column first if you want aligned length
-                    self.df_all.loc[self.df_all["is_kept"], col] = self.df[col].values
+#                     Set the values of self.df when we are actually keeping the trigger. 
+                    self.df_all.loc[self.df.index, col] = self.df[col]
 
         
-        self.df_all["is_kept"] = self.df_all["is_kept"].astype(np.int32)
+        self.df_all["is_kept"] = self.df_all["is_kept"].astype(np.int32) 
         
         
         #changing the names of the variables so they are more clear 
@@ -3435,15 +3449,15 @@ class BeamAnalysis:
 #                 "muon_purity":np.array([self.muon_purity], dtype=np.float64),
 #                 "muon_efficiency":np.array([self.muon_efficiency], dtype=np.float64),
             }
-#             for prefix, d in [("tof_mean", self.particle_tof_mean),
-#                   ("tof_std", self.particle_tof_std),
-#                   ("tof_eom", self.particle_tof_eom),
-#                   ("momentum_mean", self.particle_mom_mean),
-#                   ("momentum_eom", self.particle_mom_mean_err),
-#                   ("momentum_after_beam_window_mean", self.particle_mom_mean),
-#                   ("momentum_after_beam_window_eom", self.particle_mom_mean_err)]:
-#                 for key, value in d.items():
-#                     results[f"{prefix}_{key}"] = np.array([value], dtype=np.float64)
+            for prefix, d in [("tof_mean", self.particle_tof_mean),
+                  ("tof_std", self.particle_tof_std),
+                  ("tof_eom", self.particle_tof_eom),
+                  ("momentum_mean", self.particle_mom_mean),
+                  ("momentum_eom", self.particle_mom_mean_err),
+                  ("momentum_after_beam_window_mean", self.particle_mom_mean),
+                  ("momentum_after_beam_window_eom", self.particle_mom_mean_err)]:
+                for key, value in d.items():
+                    results[f"{prefix}_{key}"] = np.array([value], dtype=np.float64)
 
                     
 #             results["n_electrons"] = np.array([sum(self.df_all["is_electron"]) ], dtype=np.float64) 
