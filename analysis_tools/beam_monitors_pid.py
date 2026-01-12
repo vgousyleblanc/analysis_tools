@@ -342,10 +342,15 @@ class BeamAnalysis:
         t0_avgs  =  np.full(nEvents, np.nan, dtype=float)
         t1_avgs  =  np.full(nEvents, np.nan, dtype=float)
         t4_avgs  =  np.full(nEvents, np.nan, dtype=float)
+        t0_avgs_second_hit  =  np.full(nEvents, np.nan, dtype=float)
+        t1_avgs_second_hit  =  np.full(nEvents, np.nan, dtype=float)
+        t4_avgs_second_hit  =  np.full(nEvents, np.nan, dtype=float)
         t5_avgs  =  np.full(nEvents, np.nan, dtype=float)
         tof_vals =  np.full(nEvents, np.nan, dtype=float)
         t4_l_array =  np.full(nEvents, np.nan, dtype=float)
         t4_r_array =  np.full(nEvents, np.nan, dtype=float)
+        t4_l_array_second_hit =  np.full(nEvents, np.nan, dtype=float)
+        t4_r_array_second_hit =  np.full(nEvents, np.nan, dtype=float)
         tof_t0t4_vals =  np.full(nEvents, np.nan, dtype=float)
         tof_t4t1_vals =  np.full(nEvents, np.nan, dtype=float)
         tof_t0t5_vals =  np.full(nEvents, np.nan, dtype=float)
@@ -358,6 +363,7 @@ class BeamAnalysis:
         ref0_times =  np.full(nEvents, np.nan, dtype=float)
         ref1_times =  np.full(nEvents, np.nan, dtype=float)
         evt_quality_bitmask =  np.full(nEvents, np.nan, dtype=float)
+        digi_issues_bitmask =  np.full(nEvents, np.nan, dtype=float)
         
         #Also save the spill number for that event
         spill_number =  np.full(nEvents, np.nan, dtype=float)
@@ -370,6 +376,11 @@ class BeamAnalysis:
             "event_q_hc_hit": 3,
             "event_q_t4_missing_qdc": 4,
             "t5_more_than_one_hit": 5
+        }
+        
+        self.digitisation_issues_flag_map = {
+            "qdc_failure": 0,
+            "missing_digitiser_times": 1,
         }
         
         
@@ -522,6 +533,7 @@ class BeamAnalysis:
             MAX_CH = 128  #modify the dictionary based data hadnling to array
 
             corrected = np.full(MAX_CH, np.nan)
+            corrected_second_hit = np.full(MAX_CH, np.nan)
             qdc_vals  = np.full(MAX_CH, np.nan)
             pe_vals   = np.full(MAX_CH, np.nan)
 
@@ -546,12 +558,15 @@ class BeamAnalysis:
             for ch, t in zip(tdc_ids, tdc_times):
                 #do not store the information for the reference PMT and do not add the time if we already have an entry for that specific channel (That should be taking care of the case where more than one TDC is recorded) 
 #                 if ch in reference_ids or ch in corrected:
-                if ch in reference_ids or not np.isnan(corrected[ch]):
+                if ch in reference_ids:
 #                     if ch in corrected:
 #                         t_corr = t - (ref0 if ch < reference_ids[0] else ref1)
 #                         print(f"We have more than one TDC entry for channel {ch}, the one stored is {corrected[ch]}, the new one would be {t_corr}, we are not keeping it but make sure that the following quantity is positive: {t_corr - corrected[ch]}")
                     continue
-                if not np.isnan(corrected[ch]):
+                if not np.isnan(corrected[ch]) and np.isnan(corrected_second_hit[ch]):
+                    #if we already have a hit in the corrected time 
+                    reference_time = ref0 if ch <= reference_ids[0] else ref1
+                    corrected_second_hit[ch] = t - reference_time
                     continue
         
                 reference_time = ref0 if ch <= reference_ids[0] else ref1
@@ -576,7 +591,7 @@ class BeamAnalysis:
             event_q_t0_or_t1_missing_tdc = False
             # require all channels on T0/T1 before computing averages
 #             if not all(ch in corrected for ch in t0_group+t1_group):
-            if not all(not np.isnan(corrected[ch]) for ch in t0_group):
+            if not all(not np.isnan(corrected[ch]) for ch in t0_group+t1_group):
                 keep_event = False
                 event_q_t0_or_t1_missing_tdc = True
                 t0 = None
@@ -589,6 +604,12 @@ class BeamAnalysis:
 #                 t1 = np.mean([corrected[ch] for ch in t1_group])
                 vals = [corrected[ch] for ch in t1_group]
                 t1 = sum(vals) / len(vals)
+        
+                vals = [corrected_second_hit[ch] for ch in t0_group]
+                t0_second_hit = sum(vals) / len(vals)
+                
+                vals = [corrected_second_hit[ch] for ch in t1_group]
+                t1_second_hit = sum(vals) / len(vals)
                 
 
            
@@ -609,6 +630,12 @@ class BeamAnalysis:
                 t4_l = corrected[t4_group[0]] #if not np.isnan(corrected[t4_group[0]]) else None
                 t4_r = corrected[t4_group[1]] #if not np.isnan(corrected[t4_group[1]]) else None
                 
+                vals = [corrected_second_hit[ch] for ch in t4_group]
+                t4_second_hit = sum(vals) / len(vals)
+                
+                t4_l_second_hit = corrected_second_hit[t4_group[0]] #if not np.isnan(corrected[t4_group[0]]) else None
+                t4_r_second_hit = corrected_second_hit[t4_group[1]]
+                
                 
             event_q_t4_missing_qdc = False
 #             if not all(ch in qdc_dict for ch in t4_group):
@@ -623,9 +650,14 @@ class BeamAnalysis:
             for ch0, ch1 in t5_total_group:
                 v0 = corrected[ch0]
                 v1 = corrected[ch1]
+                #checking if we have a second hit in the T5
+                w0 = corrected_second_hit[ch0]
+                w1 = corrected_second_hit[ch1]
 
                 if not np.isnan(v0) and not np.isnan(v1):
                     t5_bar_means.append(0.5 * (v0 + v1))
+                if not np.isnan(w0) and not np.isnan(w1):
+                    t5_bar_means.append(0.5 * w0 + w1)
                  
             #in case there is no pairs of t5 hits 
             event_q_t5_missing_tdc = (len(t5_bar_means) == 0)
@@ -651,8 +683,18 @@ class BeamAnalysis:
             t0_avgs[evt_idx] = t0
             t1_avgs[evt_idx] = t1
             t4_avgs[evt_idx] = t4
+            
+            t0_avgs_second_hit[evt_idx] = t0_second_hit
+            t1_avgs_second_hit[evt_idx] = t1_second_hit
+            t4_avgs_second_hit[evt_idx] = t4_second_hit
+            
+            
             t4_l_array[evt_idx] = t4_l
             t4_r_array[evt_idx] = t4_r
+            
+            t4_l_array_second_hit[evt_idx] = t4_l_second_hit
+            t4_r_array_second_hit[evt_idx] = t4_r_second_hit
+            
             t5_avgs[evt_idx] = t5_earliest_time
             
             
@@ -729,6 +771,16 @@ class BeamAnalysis:
             bitmask = write_event_quality_mask(flags, self.reference_flag_map)
             evt_quality_bitmask[evt_idx] = bitmask
             
+            flags_digi = {
+                "qdc_failure": event_q_no_qdc_entry,
+                "missing_digitiser_times": missing_digitiser_times,
+               
+            }
+            
+            #the bitmask that handles issues related to digitisation 
+            bitmask_digitisation = write_event_quality_mask(flags_digi, self.digitisation_issues_flag_map)
+            digi_issues_bitmask[evt_idx] = bitmask_digitisation 
+            
             
             
             #here we are obtaining the bitmask corresponding to this specific set of flags 
@@ -755,9 +807,14 @@ class BeamAnalysis:
             "t0_time": t0_avgs,
             "t1_time": t1_avgs,
             "t4_time": t4_avgs,
+            "t0_time_second_hit": t0_avgs_second_hit,
+            "t1_time_second_hit": t1_avgs_second_hit,
+            "t4_time_second_hit": t4_avgs_second_hit,
             "t5_time": t5_avgs,
             "t4_l": t4_l_array,
             "t4_r": t4_r_array,
+            "t4_l_second_hit": t4_l_array_second_hit,
+            "t4_r_second_hit": t4_r_array_second_hit,
             "act0_l": act0_l,
             "act1_l": act1_l,
             "act2_l": act2_l,
@@ -787,8 +844,7 @@ class BeamAnalysis:
             "ref1_time":ref1_times,
             "spill_number":spill_number,
             "evt_quality_bitmask":evt_quality_bitmask,
-            "qdc_failure":event_q_no_qdc_entry,
-            "missing_digitiser_times": missing_digitiser_times,
+            "digi_issues_bitmask":digi_issues_bitmask
           
         }
         
@@ -1733,12 +1789,9 @@ class BeamAnalysis:
             #account for the momentum lost
             for i in range(len(momentum)):
                 p = np.argmin(np.abs(g4_energy - momentum[i]))  # index of closest value to the g4 energy
-#                 print(p, len(psp["Total_st_pw [MeV/m]"]))
                 if p > len(psp["Total_st_pw [MeV/m]"])-2:
                     p = len(psp["Total_st_pw [MeV/m]"])-2
                     
-#                 print(p, len(psp["Total_st_pw [MeV/m]"]))
-#                 print(psp["#Kinetic_energy [GeV]"].iloc[p])
 
                 particle_kinetic_energy = np.sqrt(momentum[i]**2 + masses[particle_name]**2) - masses[particle_name] 
 
@@ -1824,8 +1877,19 @@ class BeamAnalysis:
         #Trigger scintillators assumed to be all the same thickness, from Bruno's slides
         #This TS thickness is only the acrylic part 
         t0_thickness =  det_module.get_thickness_m("T0", "scintillator") #6.4e-3 #mm to m
-        t4_thickness =  det_module.get_thickness_m("T1", "scintillator") #6.4e-3 #mm to m
+        t4_thickness =  det_module.get_thickness_m("T4", "scintillator") #6.4e-3 #mm to m
+        t1_thickness =  det_module.get_thickness_m("T1", "scintillator") #6.4e-3 #mm to m
         TOF_thickness = det_module.get_thickness_m("T5", "scintillator") #6.4e-3
+        
+        T0_mylar_thickness = det_module.get_thickness_m("T0", "mylar")
+        T1_mylar_thickness = det_module.get_thickness_m("T1", "mylar")
+        T4_mylar_thickness = det_module.get_thickness_m("T4", "mylar")
+        TOF_mylar_thickness = det_module.get_thickness_m("T5", "mylar")
+        
+        T0_vinyl_thickness = det_module.get_thickness_m("T0", "vinyl")
+        T1_vinyl_thickness = det_module.get_thickness_m("T1", "vinyl")
+        T4_vinyl_thickness = det_module.get_thickness_m("T4", "vinyl")
+        TOF_vinyl_thickness = det_module.get_thickness_m("T5", "vinyl")
         
         T4_total_thickness = det_module.get_total_thickness_m("T4")
         T1_total_thickness = det_module.get_total_thickness_m("T1")
@@ -1838,7 +1902,7 @@ class BeamAnalysis:
         t1_TOF_distance = det_module.distance_m("T1", "T5")   #215.13e-2
        
         
-        
+        #WCTE tank window 
         beam_window_thickness = 1.2e-3 #https://wcte.hyperk.ca/wg/simulation-and-analysis/meetings/2024/20241122/meeting/simulation-update-beam-pipe-and-camera-housing/pipe_housing_wcsim_20241122.pdf/view
 
 
@@ -1929,6 +1993,149 @@ class BeamAnalysis:
         total_length = 0
         
         
+        
+        #re-write this code a bit cleaner, account for the dEdx at each step
+        #To be cleaned up/expanded on, when ready
+        
+        if self.there_is_ACT5:
+            #all of the materials that are in the beam 
+            names_materials = ["Mylar_beam_window",
+                              "air_beam_window_to_T0",
+                              "T0_vinyl",
+                              "T0_Mylar",
+                              "T0_scintillator",
+                              "T0_Mylar",
+                              "T0_vinyl",
+                              "air_T0_to_T4",
+                              "T4_vinyl",
+                              "T4_Mylar",
+                              "T4_scintillator",
+                              "T4_Mylar",
+                              "T4_vinyl",
+                              "air_T4_to_ACT0",
+                              "ACT0_vinyl",
+                              "ACT0_Mylar",
+                              "ACT0_aerogel",
+                              "ACT0_Mylar",
+                              "ACT0_air",
+                              "ACT0_vinyl",
+                              "air_ACT0_to_ACT1",
+                              "ACT1_vinyl",
+                              "ACT1_Mylar",
+                              "ACT1_aerogel",
+                              "ACT1_Mylar",
+                              "ACT1_air",
+                              "ACT1_vinyl",
+                              "air_ACT1_to_ACT2",
+                              "ACT2_vinyl",
+                              "ACT2_Mylar",
+                              "ACT2_aerogel",
+                              "ACT2_Mylar",
+                              "ACT2_air",
+                              "ACT2_vinyl",
+                              "air_ACT2_to_ACT3",
+                              "ACT3_vinyl",
+                              "ACT3_Mylar",
+                              "ACT3_aerogel",
+                              "ACT3_Mylar",
+                              "ACT3_air",
+                              "ACT3_vinyl",
+                              "air_ACT3_to_ACT4",
+                              "ACT4_vinyl",
+                              "ACT4_Mylar",
+                              "ACT4_aerogel",
+                              "ACT4_Mylar",
+                              "ACT4_air",
+                              "ACT4_vinyl",
+                              "air_ACT4_to_ACT5",
+                              "ACT5_vinyl",
+                              "ACT5_Mylar",
+                              "ACT5_aerogel",
+                              "ACT5_Mylar",
+                              "ACT5_air",
+                              "ACT5_vinyl",
+                              "air_ACT5_to_T1",
+                              "T1_vinyl",
+                              "T1_Mylar",
+                              "T1_scintillator",
+                              "T1_Mylar",
+                              "T1_vinyl",
+                              "air_T1_to_T5",
+                              "T5_vinyl",
+                              "T5_Mylar",
+                              "T5_scintillator",
+                              "T5_Mylar",
+                              "T5_vinyl",
+                              "air_T5_to_window", 
+                              "WCTE_window"]
+        else:
+                names_materials = ["Mylar_beam_window",
+                              "air_beam_window_to_T0",
+                              "T0_vinyl",
+                              "T0_Mylar",
+                              "T0_scintillator",
+                              "T0_Mylar",
+                              "T0_vinyl",
+                              "air_T0_to_T4",
+                              "T4_vinyl",
+                              "T4_Mylar",
+                              "T4_scintillator",
+                              "T4_Mylar",
+                              "T4_vinyl",
+                              "air_T4_to_ACT0",
+                              "ACT0_vinyl",
+                              "ACT0_Mylar",
+                              "ACT0_aerogel",
+                              "ACT0_Mylar",
+                              "ACT0_air",
+                              "ACT0_vinyl",
+                              "air_ACT0_to_ACT1",
+                              "ACT1_vinyl",
+                              "ACT1_Mylar",
+                              "ACT1_aerogel",
+                              "ACT1_Mylar",
+                              "ACT1_air",
+                              "ACT1_vinyl",
+                              "air_ACT1_to_ACT2",
+                              "ACT2_vinyl",
+                              "ACT2_Mylar",
+                              "ACT2_aerogel",
+                              "ACT2_Mylar",
+                              "ACT2_air",
+                              "ACT2_vinyl",
+                              "air_ACT2_to_ACT3",
+                              "ACT3_vinyl",
+                              "ACT3_Mylar",
+                              "ACT3_aerogel",
+                              "ACT3_Mylar",
+                              "ACT3_air",
+                              "ACT3_vinyl",
+                              "air_ACT3_to_ACT4",
+                              "ACT4_vinyl",
+                              "ACT4_Mylar",
+                              "ACT4_aerogel",
+                              "ACT4_Mylar",
+                              "ACT4_air",
+                              "ACT4_vinyl",
+                              "air_ACT4_to_T1",
+                              "T1_vinyl",
+                              "T1_Mylar",
+                              "T1_scintillator",
+                              "T1_Mylar",
+                              "T1_vinyl",
+                              "air_T1_to_T5",
+                              "T5_vinyl",
+                              "T5_Mylar",
+                              "T5_scintillator",
+                              "T5_Mylar",
+                              "T5_vinyl",
+                              "air_T5_to_window", 
+                              "WCTE_window"]
+        
+        
+        
+        
+        
         #We look into the initial momenta as the particle exits the beam pipe 
         #need to take into account the energy lost to the Mylar window
 
@@ -1937,15 +2144,13 @@ class BeamAnalysis:
 
         ###################  Exit Beam Pipe  ############################################# 
         #1 step is enough in the Mylar
-        momentum, _, total_length = self.return_losses(1, 0.25e-6, particle_name, momentum, total_tof, total_length, psp_mylar, verbose = verbose)
+        momentum, _, total_length = self.return_losses(5, 0.25e-3, particle_name, momentum, total_tof, total_length, psp_mylar, verbose = verbose)
 
         if verbose: print(f"After crossing the mylar beam pipe window, the momentum is {momentum} and the TOF is {total_tof}")
 
         ##################    Cross T0    ###############################################
         #First half, 10 steps
         #Actually, say the TOF starts at the very beginning of T0
-       
-        #momentum, _, total_length = self.return_losses(10, t0_thickness/2, particle_name, momentum, total_tof, total_length, psp_plasticScintillator, verbose = verbose)
         
         momentum, total_tof, total_length = self.return_losses(3, 0.18e-3, particle_name, momentum, total_tof, total_length, psp_plasticScintillator, verbose = verbose)
 
@@ -2121,10 +2326,6 @@ class BeamAnalysis:
         momentum, _, total_length = self.return_losses(5, beam_window_thickness, particle_name, momentum, new_tof, total_length, psp_mylar, verbose = verbose)
         
         
-        
-        
-        
-            
         return initial_momentum, momentum, total_tof
      
         
@@ -2238,6 +2439,9 @@ class BeamAnalysis:
         
         momentum_points = np.linspace(170, 1900, 56)
         
+        #give_tof gives the nominal time of flight for particles of this type in the given momentum range
+        #We then compare the measured TOF with those theoretical values to retrieve the momentum
+        #The muon momentum is those after the beam window
         init_mom, pion_mom, pion_tof = self.give_tof( "Pions", momentum_points,  self.n_eveto, self.n_tagger, self.there_is_ACT5, self.run_momentum, "T0T1", verbose = verbose)
         
         init_mom, muon_mom, muon_tof = self.give_tof( "Muons", momentum_points,  self.n_eveto, self.n_tagger, self.there_is_ACT5, self.run_momentum, "T0T1", verbose = False)
@@ -2355,8 +2559,7 @@ class BeamAnalysis:
         if sum(self.df["is_proton"]==True) > 100 :
             
             momentum_points_proton = np.linspace(self.run_momentum * 0.7, 1900,48)
-            
-            
+            #get the nominal TOF for protons
             init_mom, proton_mom, proton_tof = self.give_tof( "Protons", momentum_points_proton,  self.n_eveto, self.n_tagger, self.there_is_ACT5, self.run_momentum, "T0T1", verbose = False)
             
         
@@ -2551,7 +2754,6 @@ class BeamAnalysis:
             ax.set_xlabel("Initial momentum", fontsize = 18)
             ax.legend(fontsize = 12)
             ax.grid()
-#                 ax.set_ylim(min(helium3_tof_m) * 0.98,max(momentum_points_helium3) * 1.04)
             ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c)", fontsize = 20)
 
             self.pdf_global.savefig(fig)
@@ -2632,12 +2834,12 @@ class BeamAnalysis:
         trigger_deuteron_tof = self.df.loc[mask_deuteron, "tof_corr"].to_numpy()
         trigger_helium3_tof = self.df.loc[mask_helium3, "tof_corr"].to_numpy()
         
-        #now compute the momentum for each trigger
+        #now compute the momentum for each trigger based on the TOF that is measured for each of them 
         mom, mom_err = self.extrapolate_trigger_momentum(momentum_points, muon_tof, trigger_muon_tof, electron_tof_std)
         self.df.loc[mask_muon, "initial_momentum"] = mom
         self.df.loc[mask_muon, "initial_momentum_error"] = mom_err
         
-        
+        #now extrapolating the momentum after the WCTE beam pipe
         mom, mom_err = self.extrapolate_trigger_momentum(muon_mom, muon_tof, trigger_muon_tof, electron_tof_std)
         self.df.loc[mask_muon, "final_momentum"] = mom
         self.df.loc[mask_muon, "final_momentum_error"] = mom_err
@@ -3343,8 +3545,8 @@ class BeamAnalysis:
                   ("tof_eom", self.particle_tof_eom),
                   ("momentum_mean", self.particle_mom_mean),
                   ("momentum_eom", self.particle_mom_mean_err),
-                  ("momentum_after_beam_window_mean", self.particle_mom_mean),
-                  ("momentum_after_beam_window_eom", self.particle_mom_mean_err)]:
+                  ("momentum_after_beam_window_mean", self.particle_mom_final_mean),
+                  ("momentum_after_beam_window_eom", self.particle_mom_final_mean_err)]:
                 for key, value in d.items():
                     results[f"{prefix}_{key}"] = np.array([value], dtype=np.float64)
 
@@ -3377,7 +3579,7 @@ class BeamAnalysis:
            
         for col in self.df.columns:
             if col not in self.df_all.columns:
-                if col not in ["is_muon", "is_electron", "is_pion", "is_proton", "is_deuteron", "is_helium3", "is_tritium", "is_lithium6"]:
+                if col not in ["is_muon", "is_electron", "is_pion", "is_proton", "is_deuteron", "is_helium3", "is_tritium", "is_lithium6", "final_momentum", "final_momentum_error", "initial_momentum", "initial_momentum_error"]:
                     self.df_all[col] = np.nan  # create empty column first if you want aligned length
 #                     Set the values of self.df when we are actually keeping the trigger. 
                     self.df_all.loc[self.df.index, col] = self.df[col]
@@ -3454,8 +3656,8 @@ class BeamAnalysis:
                   ("tof_eom", self.particle_tof_eom),
                   ("momentum_mean", self.particle_mom_mean),
                   ("momentum_eom", self.particle_mom_mean_err),
-                  ("momentum_after_beam_window_mean", self.particle_mom_mean),
-                  ("momentum_after_beam_window_eom", self.particle_mom_mean_err)]:
+                  ("momentum_after_beam_window_mean", self.particle_mom_final_mean),
+                  ("momentum_after_beam_window_eom", self.particle_mom_final_mean_err)]:
                 for key, value in d.items():
                     results[f"{prefix}_{key}"] = np.array([value], dtype=np.float64)
 
