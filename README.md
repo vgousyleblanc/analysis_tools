@@ -52,8 +52,13 @@ Class to load PMT positions, directions and calculate time of flight.
 
 This code performs the 1pe calibration of the ACT PMTs as well as the *basic* event PID based on monitor information (TOF, 
 charge deposited in ACTs, etc...). 
-The beam PID code is called by the notebooks/WCTE_beam_analysis.ipynb notebook, which in turn calls 
-the BeamAnalysis class living in the notebooks/beam_monitors_pid.py python script.  
+The beam PID code is called by the script/WCTE_beam_analysis.py code, which in turn calls 
+the BeamAnalysis class living in the analysis_tools/beam_monitors_pid.py python script.  
+
+
+All of the information about this version of the code (made for the winter 2025-2026 data production is available here: 
+https://www.overleaf.com/read/fshzdwxbjwnn#c0127f
+please read ! Email Alie or Bruno if you have any questions. 
 
 All the plots needed for visualising the selection are saved under  
 notebooks/plots and any user of the code should refer to them for sanity checks, an example is provided. The
