@@ -1,6 +1,8 @@
 """
 Module to load detector geometry from a YAML file and compute distances between detectors.
-Written by Bruno, to be included by Alie in the general beam analysis code  .
+Written by Bruno, to be included by Alie in the general beam analysis code.
+
+Added a second class to read the run information stored in the json files at /eos/experiment/wcte/configuration/run_info/google_sheet_beam_data.json
 """
 
 from __future__ import annotations
@@ -8,6 +10,89 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Any, Union
 import yaml
+import json
+
+
+class ReadBeamRunInfo:
+    """Reads in the run information stored in the json file"""
+    def __init__(self):
+        with open("/eos/experiment/wcte/configuration/run_info/google_sheet_beam_data.json") as f:
+            self.runs = json.load(f)
+            
+    def get_info_run_number(self, run_number):
+        
+        target_run = None
+        for run in self.runs:
+            if run.get("run_number") == str(run_number):
+                self.target_run = run
+                target_run = run
+        if target_run == None:
+            raise Exception(f"The run {run_number} was not found in the /eos/experiment/wcte/configuration/run_info/google_sheet_beam_data.json referecence file")
+    
+        run_number = int(target_run.get("run_number"))
+        run_momentum = int(target_run.get("beam_momentum"))
+        n_eveto_group = float(target_run.get("act0"))
+
+        if (target_run.get("act0") != target_run.get("act1") or target_run.get("act0")!= target_run.get("act2") or target_run.get("act1") != target_run.get("act2")):
+            raise Exception("The three upstream ACTs should have the same refractive index")
+
+        there_is_ACT5 = True    
+
+        n_tagger_group = float(target_run.get("act3"))
+
+        print(n_tagger_group)
+
+        if (target_run.get("act5")=="OUT"):
+            there_is_ACT5 = False
+            
+        if (target_run.get("lead_glass")=="IN"):
+            raise Exception(f"This beam analysis code is designed for runs where the lead_glass is out of the beamline, in run {run_number} it is {target_run.get("lead_glass")}")
+
+        if there_is_ACT5:
+            if (target_run.get("act3") != target_run.get("act4") or target_run.get("act3")!= target_run.get("act5") or target_run.get("act4") != target_run.get("act5")):
+                raise Exception("The three downstream ACTs should have the same refractive index")
+        else:
+            if (target_run.get("act3") != target_run.get("act4")):
+                raise Exception("The two downstream ACTs should have the same refractive index")
+                
+        beam_config = target_run.get("beam_config")
+                
+        return run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5, beam_config
+    
+    
+    def print_run_summary(self, there_is_ACT5):
+        run = self.target_run
+        print("\n" + "="*60)
+        print(f" Run summary")
+        print("="*60)
+
+        print(f" Run number        : {run.get('run_number')}")
+        print(f" Beam momentum     : {run.get('beam_momentum')} MeV/c")
+        print(f" Beam config       : {run.get('beam_config')}")
+        print(f" Trigger config    : {run.get('trigger_config')}")
+        print(f" Lead glass        : {run.get('lead_glass')}")
+
+        print("\n ACT configuration")
+        print(" -----------------")
+        print(f" Upstream ACTs     : n = {run.get('act0')} (ACT0/1/2)")
+        print(f" Downstream ACTs   : n = {run.get('act3')} (ACT3/4"
+              f"{'/5' if there_is_ACT5 else ''})")
+
+        print("\n Timing")
+        print(" ------")
+        print(f" Date              : {run.get('date')}")
+        print(f" Start time        : {run.get('start_time')}")
+        print(f" End time          : {run.get('end_time')}")
+
+        print("\n Status / comments")
+        print(" -----------------")
+        print(f" Status            : {run.get('status')}")
+        comments = run.get("comments")
+        if comments:
+            print(f" Comments          : {comments}")
+
+        print("="*60 + "\n")
+
 
 
 @dataclass(frozen=True)

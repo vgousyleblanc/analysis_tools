@@ -11,49 +11,42 @@ sys.path.append("../") #neeed to acess the analysis_tools folded to acess
 from analysis_tools import BeamAnalysis # as bm
 # import cProfile
 
+from analysis_tools import ReadBeamRunInfo 
+
+import argparse
+
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Beam analysis configuration loader"
+    )
+
+    parser.add_argument(
+        "--run",
+        dest="run_number",
+        type=int,
+        required=True,
+        help="Run number to analyse"
+    )
+
+    return parser.parse_args()
+
+
+#Step 0: read  from the json file which run you want and its properties
+
+args = parse_args()
+target_run_number = args.run_number
+
+
+run_info = ReadBeamRunInfo()
+
+#The beam config holds information about the colimator slit status, in case it's needed
+run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5, beam_config = run_info.get_info_run_number(target_run_number)
+run_info.print_run_summary(there_is_ACT5)
 
 #choose the number of events to read in, set to -1 if you want to read all events
 n_events = -1
-
-
-#Step 1, read in the data 
-
-#### Example 1: medium momentum negative polarity
-# run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5 = 1478, -410, 1.01, 1.06, False
-
-### Example 2: relatively high momentum, positive polarity
-# run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5 = 1610, 760, 1.01, 1.015, True
-
-
-##### Example 3: relatively high momentum, positive polarity
-run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5 = 1602, 770, 1.01, 1.015, True
-
-######## Example 4: relatively high momentum positive polarity
-# run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5 = 1606,780, 1.01,1.015,True
-
-###Example 5: low momentum, positive polarity 
-# run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5 = 1308,220,1.01,1.15, False
-#careful, run 1406 muons are below threshold, due to beam momentum biais at negative polarity
-# run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5 = 1406,-220,1.01,1.15, False
-# run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5 = 1419,-240,1.01,1.15, False
-
-###Example 6: 
-# run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5 = 2077, 450, 1.01, 1.047, False
-
-##example 7
-# run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5 = 2098, 530, 1.01, 1.03, False
-
-##example 8
-# run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5 = 1506, -560, 1.01, 1.03, False
-
-
-##example 10
-# run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5 = 2241, 800, 1.01, 1.015, False
-
-##example 11
-# run_number, run_momentum, n_eveto_group, n_tagger_group, there_is_ACT5 = 2023, 370, 1.01, 1.06, False
-
-
 
 #output_filename
 filename = f"../data/beam_data_analysis/beam_analysis_R{run_number}.root"
@@ -103,10 +96,6 @@ ana.plot_all_TOFs()
 #This function extimates both the mean momentum for each particle type and for each trigger
 #We take the the error on the tof for each trigger is the resolution of the TS0-TS1 measurement
 #Taken as the std of the gaussian fit to the electron TOF
-#This is still a somewhat coarse way of estimating uncertainty... 
-#This also saves the momentum after exiting the beam window, recosntructed using the same techinque
-#Final momentum is after exiting through the beam pipe
-#There is a little offset in the total length (1cm) found through tunning, needs more precise length calculation
 ana.estimate_momentum(verbose = False)
 
 #Step X: end_analysis, necessary to cleanly close files 
