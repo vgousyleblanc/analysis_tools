@@ -31,6 +31,10 @@ class ReadBeamRunInfo:
     
         run_number = int(target_run.get("run_number"))
         run_momentum = int(target_run.get("beam_momentum"))
+        
+        if target_run.get("act0")=="out":
+            raise Exception(f"There is no ACT0 in run {run_number}")
+        
         n_eveto_group = float(target_run.get("act0"))
 
         if (target_run.get("act0") != target_run.get("act1") or target_run.get("act0")!= target_run.get("act2") or target_run.get("act1") != target_run.get("act2")):
