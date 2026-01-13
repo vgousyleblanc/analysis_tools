@@ -53,7 +53,9 @@ Class to load PMT positions, directions and calculate time of flight.
 This code performs the 1pe calibration of the ACT PMTs as well as the *basic* event PID based on monitor information (TOF, 
 charge deposited in ACTs, etc...). 
 The beam PID code is called by the script/WCTE_beam_analysis.py code, which in turn calls 
-the BeamAnalysis class living in the analysis_tools/beam_monitors_pid.py python script.  
+the BeamAnalysis class living in the analysis_tools/beam_monitors_pid.py python script. To call the script on the lxplus machines, run:
+'''python3  script/WCTE_beam_analysis.py --run <run_number>'''
+the code looks up the run information from the .json file of run information compiled by Laurence from the Google sheet. 
 
 
 All of the information about this version of the code (made for the winter 2025-2026 data production is available here: 
@@ -66,7 +68,8 @@ outputs of the selection are saved in a separate root file called beam_analysis_
 
 The code also calculates the mean momentum for each particle type before exiting the CERN beam pipe (upstream of T0) 
 and right after exiting the WCTE beam window (i.e. into the tank). These momenta are also estimated for each trigger,
-based on the estimated PID. Note the error on these momenta (propagated from the time of flight resultion, taken as the
+based on the estimated PID (shown on plots but not shared due to the large error and general unreliability). 
+Note the error on these momenta (propagated from the time of flight resultion, taken as the
 standard deviation of the TOF distribution for electrons) is very large for slow particles. Protons and deuterons events are 
 identified using their time of flight but 3He nuclei aren't. The total charge in the TOF detector is saved in the output file but
 no cut is placed on it. The "is_kept" branch of the output file stores information on whether the trigger passes the basic beam
