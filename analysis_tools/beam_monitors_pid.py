@@ -23,9 +23,119 @@ from collections import defaultdict
 import sys
 # sys.path.append("/eos/user/a/acraplet/analysis_tools/")
 #the module for reading the yaml file with the detector distances and dimensions - from Bruno
-from .read_beam_detector_distances import DetectorDB as db
+from read_beam_detector_distances import DetectorDB as db
+
+#Default informations
+c = 0.299792458 #in m.ns^-1 do not change the units please as these are called throuhout
+L =  444.03 #4.3431
+L_t0t4 = 305.68 #2.9485
+L_t4t1 = 143.38 #1.3946
+
+# Particle masses in GeV/c^2
+particle_masses = {
+    "Electrons": 0.000511,
+    "Muons": 0.105658,
+    "Pions": 0.13957,
+    "Protons": 0.938272
+}
+"""
+reference_ids = (31, 46)          # (TDC ref for IDs <31, ref1 for IDs >31)
+t0_group     = [0, 1, 2, 3]       # must all be present
+t1_group     = [4, 5, 6, 7]       # must all be present
+t4_group     = [42, 43]           # must all be present
+t4_qdc_cut   = 200                # Only hits above this value
+ACT0_group   = (12, 13)                
+ACT1_group   = (14, 15)
+ACT2_group   = (16, 17)                
+
+ACT3_group   = (18, 19)                
+ACT4_group   = (20, 21)                 
+ACT5_group   = (22, 23)    
+"""            
+act_eveto_group = [12, 13, 14, 15, 16, 17]   # ACT-eveto channels
+act_tagger_group = [18, 19, 20, 21, 22, 23]
+#hc_group = [9, 10]
+hc_charge_cut = 150
+
+t5_b0_group = [48, 56]     #T5, also known as the TOF  detector
+t5_b1_group = [49, 57]     #Pairs of siPMs on either side of a given bar
+t5_b2_group = [50, 58]     #Both SiPMs need to be above threshold for at least 
+t5_b3_group = [51, 59]     #One of the bars for the event to be kept
+t5_b4_group = [52, 60]
+t5_b5_group = [53, 61]
+t5_b6_group = [54, 62]
+t5_b7_group = [55, 63]
+t5_total_group = [t5_b0_group, t5_b1_group, t5_b2_group, t5_b3_group,
+                  t5_b4_group, t5_b5_group, t5_b6_group, t5_b7_group]
+
+#Defining the cuts
+proton_tof_cut = 17.5 #ad-hoc but works for most analyses
+deuteron_tof_cut = 35 #35 #ad-hoc but works for most analyses
+helium3_tof_cut = 30 #30 #ad-hoc 
+tritium_tof_cut = 80 #ad-hoc 
+lithium6_tof_cut = 90 #ad-hoc 
+
+
+def channel_loading(trigger_file):
+    with open(trigger_file, 'r') as f:
+        config = json.load(f)
+    t0_group=[]
+    t1_group=[]
+    t3_group=[]
+    t4_group=[]
+    ACT0_group=[]
+    ACT1_group=[]
+    ACT2_group=[]
+    ACT3_group=[]
+    ACT4_group=[]
+    ACT5_group=[]
+    reference_id=[]
+    hc_group=[]
+    input_signals = config['input_signals']
+    # Build reverse mapping (short_name -> channel_id) and group by prefix
+    for channel_id, signal_info in input_signals.items():
+        short_name = signal_info['short_name']
+        if short_name.startswith('T0-'):
+            group = 'T0'
+            t0_group.append((int(channel_id)))
+        elif short_name.startswith('T1-'):
+            group = 'T1'
+            t1_group.append((int(channel_id)))
+        elif short_name.startswith('T3'):
+            group = 'T3'
+            t3_group.append((int(channel_id)))
+        elif short_name.startswith('T4-'):
+            group = 'T4'
+            t4_group.append((int(channel_id)))
+        elif short_name.startswith('ACT0'):
+            #group = 'ACT'
+            ACT0_group.append((int(channel_id)))
+        elif short_name.startswith('ACT1'):             
+            ACT1_group.append((int(channel_id)))    
+        elif short_name.startswith('ACT2'):
+            ACT2_group.append((int(channel_id)))
+        elif short_name.startswith('ACT3'):     
+            ACT3_group.append((int(channel_id)))    
+        elif short_name.startswith('ACT4'):
+            ACT4_group.append((int(channel_id)))
+        elif short_name.startswith('ACT5'):
+            ACT5_group.append((int(channel_id)))
+        elif short_name.startswith('HC-'):
+            group = 'HC'
+            hc_group.append((int(channel_id)))
+        elif short_name.startswith('MuT-'):
+            group = 'MuT'
+        elif short_name.startswith('TOF-'):
+            group = 'TOF'
+        elif short_name.startswith('TDC'):
+            group = 'TDC'
+            reference_id.append((int(channel_id)))
+    channel_mapping = {ACT0_group[0]: "ACT0-L", ACT0_group[1]: "ACT0-R", ACT1_group[0]: "ACT1-L", ACT1_group[1]: "ACT1-R", ACT2_group[0]: "ACT2-L", ACT2_group[1]: "ACT2-R", ACT3_group[0]: "ACT3-L", ACT3_group[1]: "ACT3-R", ACT4_group[0]: "ACT4-L", ACT4_group[1]: "ACT4-R", ACT5_group[0]: "ACT5-L", ACT5_group[1]: "ACT5-R"}     
+    return reference_id, t0_group,t1_group,t3_group,t4_group,ACT0_group,ACT1_group,ACT2_group,ACT3_group,ACT4_group,ACT5_group,hc_group,channel_mapping
+
 
 #Helper functions for file reading, written by Sahar
+
 def stage_local(src_eos_path: str, min_free_gb=20, min_bytes=1_000_000) -> str:
     st = shutil.disk_usage("/tmp")
     if st.free/1e9 < min_free_gb:
@@ -164,57 +274,6 @@ def _tdc_requirement_met(group, tdc_set):
         return any(all(ch in tdc_set for ch in pair) for pair in group["channels"])
     return all(ch in tdc_set for ch in group["channels"])
 
-proton_tof_cut = 17.5 #ad-hoc but works for most analyses
-deuteron_tof_cut = 35 #35 #ad-hoc but works for most analyses
-helium3_tof_cut = 30 #30 #ad-hoc 
-tritium_tof_cut = 80 #ad-hoc 
-lithium6_tof_cut = 90 #ad-hoc 
-        
-
-#Default informations
-
-
-
-c = 0.299792458 #in m.ns^-1 do not change the units please as these are called throuhout
-L =  444.03 #4.3431
-L_t0t4 = 305.68 #2.9485
-L_t4t1 = 143.38 #1.3946
-
-# Particle masses in GeV/c^2
-particle_masses = {
-    "Electrons": 0.000511,
-    "Muons": 0.105658,
-    "Pions": 0.13957,
-    "Protons": 0.938272
-}
-
-reference_ids = (31, 46)          # (TDC ref for IDs <31, ref1 for IDs >31)
-t0_group     = [0, 1, 2, 3]       # must all be present
-t1_group     = [4, 5, 6, 7]       # must all be present
-t4_group     = [42, 43]           # must all be present
-t4_qdc_cut   = 200                # Only hits above this value
-ACT0_group   = (12, 13)                
-ACT1_group   = (14, 15)
-ACT2_group   = (16, 17)                
-
-ACT3_group   = (18, 19)                
-ACT4_group   = (20, 21)                 
-ACT5_group   = (22, 23)                
-act_eveto_group = [12, 13, 14, 15, 16, 17]   # ACT-eveto channels
-act_tagger_group = [18, 19, 20, 21, 22, 23]
-hc_group = [9, 10]
-hc_charge_cut = 150
-
-t5_b0_group = [48, 56]     #T5, also known as the TOF  detector
-t5_b1_group = [49, 57]     #Pairs of siPMs on either side of a given bar
-t5_b2_group = [50, 58]     #Both SiPMs need to be above threshold for at least 
-t5_b3_group = [51, 59]     #One of the bars for the event to be kept
-t5_b4_group = [52, 60]
-t5_b5_group = [53, 61]
-t5_b6_group = [54, 62]
-t5_b7_group = [55, 63]
-t5_total_group = [t5_b0_group, t5_b1_group, t5_b2_group, t5_b3_group,
-                  t5_b4_group, t5_b5_group, t5_b6_group, t5_b7_group]
 
 #basic functions, necessary in general
 def gaussian(x, amp, mean, sigma):
@@ -258,24 +317,28 @@ def fit_gaussian(entries, bin_centers):
     return popt, pcov
 
 
-
-
-
+#Need to think how to select it
+#reference_ids,t0_group,t1_group,t4_group,ACT0_group,ACT1_group,ACT2_group,ACT3_group,ACT4_group,ACT5_group,hc_group,channel_mapping=channel_loading("lep_v51")
 
 class BeamAnalysis:
-    def __init__(self, run_number, run_momentum, n_eveto, n_tagger, there_is_ACT5):
+    
+    
+    
+    
+    def __init__(self, run_number, run_momentum,n_eveto, n_tagger, there_is_ACT5,trigger_config="lep_v51"):
         #Store the run characteristics
         self.run_number, self.run_momentum = run_number, run_momentum
         self.n_eveto, self.n_tagger = n_eveto, n_tagger
         self.there_is_ACT5 = there_is_ACT5
+        self.trigger_config=trigger_config
+        #self.pdf_global = PdfPages(f"../notebooks/plots/PID_run{run_number}_p{run_momentum}.pdf")
+        self.pdf_global = PdfPages(f"../notebooks/plots/test.pdf")
         
-        self.pdf_global = PdfPages(f"../notebooks/plots/PID_run{run_number}_p{run_momentum}.pdf")
-        self.channel_mapping = {12: "ACT0-L", 13: "ACT0-R", 14: "ACT1-L", 15: "ACT1-R", 16: "ACT2-L", 17: "ACT2-R", 18: "ACT3-L", 19: "ACT3-R", 20: "ACT4-L", 21: "ACT4-R", 22: "ACT5-L", 23: "ACT5-R"}
+
+        self.reference_ids,self.t0_group,self.t1_group,self.t3_group,self.t4_group,self.ACT0_group,self.ACT1_group,self.ACT2_group,self.ACT3_group,self.ACT4_group,self.ACT5_group,self.hc_group,self.channel_mapping=channel_loading(self.trigger_config)
+        
+        #self.channel_mapping = {12: "ACT0-L", 13: "ACT0-R", 14: "ACT1-L", 15: "ACT1-R", 16: "ACT2-L", 17: "ACT2-R", 18: "ACT3-L", 19: "ACT3-R", 20: "ACT4-L", 21: "ACT4-R", 22: "ACT5-L", 23: "ACT5-R"}        
         print("Initialised the BeamAnalysis instance")
-        
-        
-        
-        
         
     def end_analysis(self):
         self.pdf_global.close()
@@ -326,7 +389,7 @@ class BeamAnalysis:
         
         nEvents = len(data["beamline_pmt_qdc_ids"])
         
-        #Read all the entries
+        #Generate the empty array filled with nan values
         act0_l, act1_l, act2_l, act3_l, act4_l, act5_l =  np.full(nEvents, np.nan, dtype=float),  np.full(nEvents, np.nan, dtype=float),  np.full(nEvents, np.nan, dtype=float),  np.full(nEvents, np.nan, dtype=float),  np.full(nEvents, np.nan, dtype=float),  np.full(nEvents, np.nan, dtype=float)
         act0_r, act1_r, act2_r, act3_r, act4_r, act5_r =  np.full(nEvents, np.nan, dtype=float),  np.full(nEvents, np.nan, dtype=float),  np.full(nEvents, np.nan, dtype=float),  np.full(nEvents, np.nan, dtype=float),  np.full(nEvents, np.nan, dtype=float),  np.full(nEvents, np.nan, dtype=float)
 
@@ -396,10 +459,11 @@ class BeamAnalysis:
         }
         
         #the list of required signals to pass the event selection code
+        print(self.t0_group, self.t1_group, self.t4_group)
         required_groups = [
-            {"name": "t0_group", "channels": t0_group, "mode": "all", "check_qdc": True},
-            {"name": "t1_group", "channels": t1_group, "mode": "all", "check_qdc": True},
-            {"name": "t4_group", "channels": t4_group, "mode": "all", "check_qdc": True},
+            {"name": "t0_group", "channels": self.t0_group, "mode": "all", "check_qdc": True},
+            {"name": "t1_group", "channels": self.t1_group, "mode": "all", "check_qdc": True},
+            {"name": "t4_group", "channels": self.t4_group, "mode": "all", "check_qdc": True},
         ]
         
         #always require T5
@@ -433,10 +497,7 @@ class BeamAnalysis:
         
         pbar = tqdm(total=nEvents, desc="Reading in events", unit="evt")
         
-        t4_qdc_samples = {ch: [] for ch in t4_group}
-        
-
-
+        t4_qdc_samples = {ch: [] for ch in self.t4_group}
         for evt_idx in range(nEvents):
             if evt_idx % 100 == 0:
                 pbar.update(100)
@@ -539,8 +600,8 @@ class BeamAnalysis:
 
             
             # reference-time subtraction & first-hit only
-            mask0 = (tdc_ids == reference_ids[0])
-            mask1 = (tdc_ids == reference_ids[1])
+            mask0 = (tdc_ids == self.reference_ids[0])
+            mask1 = (tdc_ids == self.reference_ids[1])
             missing_digitiser_times = False
             if not mask0.any() or not mask1.any():
                 keep_event = False
@@ -558,18 +619,18 @@ class BeamAnalysis:
             for ch, t in zip(tdc_ids, tdc_times):
                 #do not store the information for the reference PMT and do not add the time if we already have an entry for that specific channel (That should be taking care of the case where more than one TDC is recorded) 
 #                 if ch in reference_ids or ch in corrected:
-                if ch in reference_ids:
+                if ch in self.reference_ids:
 #                     if ch in corrected:
 #                         t_corr = t - (ref0 if ch < reference_ids[0] else ref1)
 #                         print(f"We have more than one TDC entry for channel {ch}, the one stored is {corrected[ch]}, the new one would be {t_corr}, we are not keeping it but make sure that the following quantity is positive: {t_corr - corrected[ch]}")
                     continue
                 if not np.isnan(corrected[ch]) and np.isnan(corrected_second_hit[ch]):
                     #if we already have a hit in the corrected time 
-                    reference_time = ref0 if ch <= reference_ids[0] else ref1
+                    reference_time = ref0 if ch <= self.reference_ids[0] else ref1
                     corrected_second_hit[ch] = t - reference_time
                     continue
         
-                reference_time = ref0 if ch <= reference_ids[0] else ref1
+                reference_time = ref0 if ch <= self.reference_ids[0] else ref1
                 corrected[ch] = t - reference_time
             
 #             qdc_dict = {}
@@ -591,7 +652,7 @@ class BeamAnalysis:
             event_q_t0_or_t1_missing_tdc = False
             # require all channels on T0/T1 before computing averages
 #             if not all(ch in corrected for ch in t0_group+t1_group):
-            if not all(not np.isnan(corrected[ch]) for ch in t0_group+t1_group):
+            if not all(not np.isnan(corrected[ch]) for ch in self.t0_group+self.t1_group):
                 keep_event = False
                 event_q_t0_or_t1_missing_tdc = True
                 t0 = None
@@ -599,16 +660,16 @@ class BeamAnalysis:
                 
             else:
 #                 t0 = np.mean([corrected[ch] for ch in t0_group])
-                vals = [corrected[ch] for ch in t0_group]
+                vals = [corrected[ch] for ch in self.t0_group]
                 t0 = sum(vals) / len(vals)
 #                 t1 = np.mean([corrected[ch] for ch in t1_group])
-                vals = [corrected[ch] for ch in t1_group]
+                vals = [corrected[ch] for ch in self.t1_group]
                 t1 = sum(vals) / len(vals)
-        
-                vals = [corrected_second_hit[ch] for ch in t0_group]
+
+                vals = [corrected_second_hit[ch] for ch in self.t0_group]
                 t0_second_hit = sum(vals) / len(vals)
                 
-                vals = [corrected_second_hit[ch] for ch in t1_group]
+                vals = [corrected_second_hit[ch] for ch in self.t1_group]
                 t1_second_hit = sum(vals) / len(vals)
                 
 
@@ -617,7 +678,7 @@ class BeamAnalysis:
             #and otherwise that both hits are above threshold
             event_q_t4_missing_tdc = False
             event_q_t4_below_thres = False
-            if not all(not np.isnan(corrected[ch]) for ch in t4_group):
+            if not all(not np.isnan(corrected[ch]) for ch in self.t4_group):
                 keep_event = False
                 event_q_t4_missing_tdc = True
                 t4 = None
@@ -625,21 +686,21 @@ class BeamAnalysis:
                 t4_r = None
                 
             else:
-                vals = [corrected[ch] for ch in t4_group]
+                vals = [corrected[ch] for ch in self.t4_group]
                 t4 = sum(vals) / len(vals)
-                t4_l = corrected[t4_group[0]] #if not np.isnan(corrected[t4_group[0]]) else None
-                t4_r = corrected[t4_group[1]] #if not np.isnan(corrected[t4_group[1]]) else None
-                
-                vals = [corrected_second_hit[ch] for ch in t4_group]
+                t4_l = corrected[self.t4_group[0]] #if not np.isnan(corrected[t4_group[0]]) else None
+                t4_r = corrected[self.t4_group[1]] #if not np.isnan(corrected[self.t4_group[1]]) else None
+
+                vals = [corrected_second_hit[ch] for ch in self.t4_group]
                 t4_second_hit = sum(vals) / len(vals)
-                
-                t4_l_second_hit = corrected_second_hit[t4_group[0]] #if not np.isnan(corrected[t4_group[0]]) else None
-                t4_r_second_hit = corrected_second_hit[t4_group[1]]
+
+                t4_l_second_hit = corrected_second_hit[self.t4_group[0]] #if not np.isnan(corrected[t4_group[0]]) else None
+                t4_r_second_hit = corrected_second_hit[self.t4_group[1]]
                 
                 
             event_q_t4_missing_qdc = False
 #             if not all(ch in qdc_dict for ch in t4_group):
-            if not all(not np.isnan(qdc_vals[ch]) for ch in t4_group):
+            if not all(not np.isnan(qdc_vals[ch]) for ch in self.t4_group):
                 keep_event = False
                 event_q_t4_missing_qdc = True
             
@@ -674,7 +735,7 @@ class BeamAnalysis:
 #             if (any(qdc_dict.get(ch, 0) >= hc_charge_cut for ch in hc_group)):
 #                 keep_event = False  # if either HC channel fired with charge ≥ threshold, skip event
 #                 event_q_hc_hit = True
-            for ch in hc_group:
+            for ch in self.hc_group:
                 if qdc_vals[ch] >= hc_charge_cut:
                     keep_event = False
                     event_q_hc_hit = True
@@ -730,18 +791,18 @@ class BeamAnalysis:
                 
 
             #svae the charge 
-            act0_l[evt_idx] = pe_vals[12]
-            act0_r[evt_idx] = pe_vals[13]
-            act1_l[evt_idx] = pe_vals[14]
-            act1_r[evt_idx] = pe_vals[15]
-            act2_l[evt_idx] = pe_vals[16]
-            act2_r[evt_idx] = pe_vals[17]
-            act3_l[evt_idx] = pe_vals[18]
-            act3_r[evt_idx] = pe_vals[19]
-            act4_l[evt_idx] = pe_vals[20]
-            act4_r[evt_idx] = pe_vals[21]
-            act5_l[evt_idx] = pe_vals[22]
-            act5_r[evt_idx] = pe_vals[23]
+            act0_l[evt_idx] = pe_vals[self.channel_mapping_inv["ACT0-L"]]
+            act0_r[evt_idx] = pe_vals[self.channel_mapping_inv["ACT0-R"]]
+            act1_l[evt_idx] = pe_vals[self.channel_mapping_inv["ACT1-L"]]
+            act1_r[evt_idx] = pe_vals[self.channel_mapping_inv["ACT1-R"]]
+            act2_l[evt_idx] = pe_vals[self.channel_mapping_inv["ACT2-L"]]
+            act2_r[evt_idx] = pe_vals[self.channel_mapping_inv["ACT2-R"]]
+            act3_l[evt_idx] = pe_vals[self.channel_mapping_inv["ACT3-L"]]
+            act3_r[evt_idx] = pe_vals[self.channel_mapping_inv["ACT3-R"]]
+            act4_l[evt_idx] = pe_vals[self.channel_mapping_inv["ACT4-L"]]
+            act4_r[evt_idx] = pe_vals[self.channel_mapping_inv["ACT4-R"]]
+            act5_l[evt_idx] = pe_vals[self.channel_mapping_inv["ACT5-L"]]
+            act5_r[evt_idx] = pe_vals[self.channel_mapping_inv["ACT5-R"]]
             
             spill_id = data["spill_counter"][evt_idx]
             spill_number[evt_idx] = spill_id
@@ -852,7 +913,7 @@ class BeamAnalysis:
         self.df_all = pd.DataFrame(data_dict)
 
         
-        #add the combined branches that can be useful
+        #add the combined branches that can be useful, generate the column to be used
         self.df_all["mu_tag_total"] = self.df_all["mu_tag_l"] + self.df_all["mu_tag_r"]
         
         
@@ -863,7 +924,7 @@ class BeamAnalysis:
             self.PMT_list = ["act0_l", "act0_r", "act1_l",  "act1_r", "act2_l", "act2_r", "act3_l", "act3_r", "act4_l", "act4_r", "act5_l", "act5_r"]
             self.df_all["act_tagger"] = self.df_all["act3_l"]+self.df_all["act3_r"]+self.df_all["act4_l"]+self.df_all["act4_r"]+self.df_all["act5_l"]+self.df_all["act5_r"]
             
-        else:
+        else: #Useful for the PMT charge deposition calibration 
             self.PMT_list = ["act0_l", "act0_r", "act1_l",  "act1_r", "act2_l", "act2_r", "act3_l", "act3_r", "act4_l", "act4_r"]
             self.df_all["act_tagger"] = self.df_all["act3_l"]+self.df_all["act3_r"]+self.df_all["act4_l"]+self.df_all["act4_r"]
         
@@ -982,15 +1043,21 @@ class BeamAnalysis:
             ax.set_ylabel("Number of entries", fontsize = 18)
             ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) - {PMT}", fontsize = 18)
             ax.grid()
+            #with PdfPages(f"../notebooks/plots/PID_run_test.pdf") as pdf:
             self.pdf_global.savefig(fig)
             plt.close()
-            
+        self.pdf_global.close()   
         print("One PE calibration finished, please don't forget to check that it is correct")
         
         
         
     def tag_electrons_ACT02(self, tightening_factor = 0):
-        '''Tagging the electrons based on the charge deposited in the upstream ACTs, add an additional scale factor to tighten the cut some more '''
+        """
+        Docstring for tag_electrons_ACT02
+        :param tightening_factor: Description
+        Tagging the electrons based on the charge deposited in the upstream ACTs,
+        add an additional scale factor to tighten the cut some more (validated)
+        """
         bins = np.linspace(0, 40, 200)
         fig, ax = plt.subplots(figsize = (8, 6))    
         h, _, _ = ax.hist(self.df["act_eveto"], bins = bins, histtype = "step")
@@ -1123,8 +1190,11 @@ class BeamAnalysis:
         
         
     def tag_protons_TOF(self):
-        '''Simple identification of the protons based on the time of flight, cutline fixed at 17.5ns for now, can be modified later if needed'''
         
+        """
+        Docstring for tag_protons_TOF
+        Simple identification of the protons based on the time of flight, cutline fixed at 17.5ns for now, can be modified later if needed
+        """
         
         if self.run_momentum < 0:
             self.df["is_proton"] = False
@@ -1133,17 +1203,13 @@ class BeamAnalysis:
             
         else:
              self.df["is_proton"] = np.where(self.df["tof"]>proton_tof_cut, self.df["tof"]<helium3_tof_cut, False)      
-             self.df["is_deuteron"] = np.where(self.df["tof"]>deuteron_tof_cut, self.df["tof"]<tritium_tof_cut, False)
-             
-            
-            
+             self.df["is_deuteron"] = np.where(self.df["tof"]>deuteron_tof_cut, self.df["tof"]<tritium_tof_cut, False)      
         
         if self.run_momentum < 700:
             self.df["is_helium3"] = False
             self.df["is_tritium"] = False           
             self.df["is_lithium6"] = False
         else:
-            
             self.df["is_helium3"] = np.where(self.df["tof"]>helium3_tof_cut, self.df["tof"]<deuteron_tof_cut, False)
             self.df["is_tritium"] = np.where(self.df["tof"]>tritium_tof_cut, self.df["tof"]<lithium6_tof_cut, False)
             self.df["is_lithium6"] = np.where(self.df["tof"]>lithium6_tof_cut, True, False)
@@ -1161,8 +1227,6 @@ class BeamAnalysis:
         n_triggers = len(self.df["is_proton"])
         
         print(f"A total of {n_protons} protons and {n_deuteron} deuterons nuclei are tagged using the TOF out of {n_triggers}, i.e. {n_protons/n_triggers * 100:.1f}% of the dataset are protons and {n_deuteron/n_triggers * 100:.1f}% are deuteron")
-        
-        
         print(f"A total of {n_helium3} helium3 nuclei, {n_tritium} tritium nuclei and {n_lithium6} lithium 6 nuclei are tagged using the TOF out of {n_triggers}, i.e. {n_helium3/n_triggers * 100:.2f}% of the dataset are helium3, {n_tritium/n_triggers * 100:.1f}% are tritium, {n_lithium6/n_triggers * 100:.2f} lithium 6 nuclei")
         
         
@@ -3206,25 +3270,27 @@ class BeamAnalysis:
         plt.close()
         
         
-            
+    #def measure_particle_TOF_kde(self):
+                
     def measure_particle_TOF(self):
-        '''Measure the TOF for each of the particles accounting for any offsets between the electron TOF and L/c'''
-        
+        """
+        Measure the TOF for each of the particles accounting for any offsets between the electron TOF and L/c
+        """ 
         there_is_proton = True
-        #Define the bounds inside which we will attempt the fits 
-        if self.run_momentum > 600:
-            times_of_flight_min = [ 12, 5, -70]
-            times_of_flight_max = [120, 50, 70 ]
+        if there_is_proton:
+            #Define the bounds inside which we will attempt the fits 
+            if self.run_momentum > 600:
+                times_of_flight_min = [ 12, 5, -70]
+                times_of_flight_max = [120, 50, 70 ]
 
-        elif self.run_momentum > 300:
-            times_of_flight_min = [ 12, 5, -70]
-            times_of_flight_max = [60, 50, 70 ]
-
+            elif self.run_momentum > 300:
+                times_of_flight_min = [ 12, 5, -70]
+                times_of_flight_max = [60, 50, 70 ]
         else:
             there_is_proton = False
             times_of_flight_min = [ 12, 5, -70]
             times_of_flight_max = [25, 20, 70 ]
-            
+                
             
             
         ##### First do T0-T1 ###########
@@ -3760,7 +3826,7 @@ class BeamAnalysis:
      ################################################
      ### Here check using the tof which ones are the muons and which are the other
    
-        print(f"The difference between the muon TOF ({self.particle_tof_mean["electron"]} +/- {self.particle_tof_std["electron"]} ns) and the electron TOF ({self.particle_tof_mean["muon"]} +/- {self.particle_tof_std["muon"]} ns)")
+        print("The difference between the muon TOF ("+format(self.particle_tof_mean["electron"])+" +/- "+format(self.particle_tof_std["electron"])+" ns) and the electron TOF "+format(self.particle_tof_mean["muon"])+" +/-"+format(self.particle_tof_std["muon"])+"ns)")
     
         
         mid_tof_e_mu = self.particle_tof_mean["electron"]+ 3 * self.particle_tof_std["electron"]
@@ -3874,8 +3940,14 @@ class BeamAnalysis:
         
         
     def plot_number_particles_per_POT(self):
-        '''This function plots the number of particles of each type recorded per spill and then per POT, required for the beam flux paper and represent an example of how to read POT information from Arturo's readings of the nxcals CERN database'''
+        """
+        Docstring for plot_number_particles_per_POT
         
+        :param self: Description
+        This function plots the number of particles of each type recorded per spill and then per POT, 
+        required for the beam flux paper and represent an example of how to read POT information from Arturo's readings
+        of the nxcals CERN database
+        """
 #         #making a complete dataframe with all of the entries, including the rejected ones 
 #         df_comp = self.df_all.copy()
         
@@ -3991,7 +4063,8 @@ class BeamAnalysis:
         ax.set_ylabel("Number of triggers", fontsize=20)
         
         ax.legend(fontsize=20)
-        ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) \n Ref times distribution, total number of spills {max(df_with_diffs["spill_number"])}")
+        #ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) \n Ref times distribution, total number of spills {max(df_with_diffs["spill_number"])}")
+        ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c)\n"f"Ref times distribution, total number of spills {max(df_with_diffs['spill_number'])}")
         self.pdf_global.savefig(fig)
         plt.close()
         
