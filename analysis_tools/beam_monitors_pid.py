@@ -12,7 +12,8 @@ import pandas as pd
 import awkward as ak
 import pyarrow as pa, pyarrow.parquet as pq
 import gc
-
+from scipy.stats import gaussian_kde
+from scipy.signal import find_peaks
 #for the nice progress bar
 from tqdm import tqdm
 
@@ -321,9 +322,6 @@ def fit_gaussian(entries, bin_centers):
 #reference_ids,t0_group,t1_group,t4_group,ACT0_group,ACT1_group,ACT2_group,ACT3_group,ACT4_group,ACT5_group,hc_group,channel_mapping=channel_loading("lep_v51")
 
 class BeamAnalysis:
-    
-    
-    
     
     def __init__(self, run_number, run_momentum,n_eveto, n_tagger, there_is_ACT5,trigger_config="lep_v51"):
         #Store the run characteristics
@@ -791,18 +789,18 @@ class BeamAnalysis:
                 
 
             #svae the charge 
-            act0_l[evt_idx] = pe_vals[self.channel_mapping_inv["ACT0-L"]]
-            act0_r[evt_idx] = pe_vals[self.channel_mapping_inv["ACT0-R"]]
-            act1_l[evt_idx] = pe_vals[self.channel_mapping_inv["ACT1-L"]]
-            act1_r[evt_idx] = pe_vals[self.channel_mapping_inv["ACT1-R"]]
-            act2_l[evt_idx] = pe_vals[self.channel_mapping_inv["ACT2-L"]]
-            act2_r[evt_idx] = pe_vals[self.channel_mapping_inv["ACT2-R"]]
-            act3_l[evt_idx] = pe_vals[self.channel_mapping_inv["ACT3-L"]]
-            act3_r[evt_idx] = pe_vals[self.channel_mapping_inv["ACT3-R"]]
-            act4_l[evt_idx] = pe_vals[self.channel_mapping_inv["ACT4-L"]]
-            act4_r[evt_idx] = pe_vals[self.channel_mapping_inv["ACT4-R"]]
-            act5_l[evt_idx] = pe_vals[self.channel_mapping_inv["ACT5-L"]]
-            act5_r[evt_idx] = pe_vals[self.channel_mapping_inv["ACT5-R"]]
+            act0_l[evt_idx] = pe_vals[self.ACT0_group[0]]
+            act0_r[evt_idx] = pe_vals[self.ACT0_group[1]]
+            act1_l[evt_idx] = pe_vals[self.ACT1_group[0]]
+            act1_r[evt_idx] = pe_vals[self.ACT1_group[1]]
+            act2_l[evt_idx] = pe_vals[self.ACT2_group[0]]
+            act2_r[evt_idx] = pe_vals[self.ACT2_group[1]]
+            act3_l[evt_idx] = pe_vals[self.ACT3_group[0]]
+            act3_r[evt_idx] = pe_vals[self.ACT3_group[1]]
+            act4_l[evt_idx] = pe_vals[self.ACT4_group[0]]
+            act4_r[evt_idx] = pe_vals[self.ACT4_group[1]]
+            act5_l[evt_idx] = pe_vals[self.ACT5_group[0]]
+            act5_r[evt_idx] = pe_vals[self.ACT5_group[1]]
             
             spill_id = data["spill_counter"][evt_idx]
             spill_number[evt_idx] = spill_id
@@ -1046,7 +1044,7 @@ class BeamAnalysis:
             #with PdfPages(f"../notebooks/plots/PID_run_test.pdf") as pdf:
             self.pdf_global.savefig(fig)
             plt.close()
-        self.pdf_global.close()   
+        #self.pdf_global.close()   
         print("One PE calibration finished, please don't forget to check that it is correct")
         
         
@@ -1094,12 +1092,99 @@ class BeamAnalysis:
         n_triggers = len(self.df["is_electron"])
         print(f"A total of {n_electrons} electrons are tagged with ACT02 out of {n_triggers}, i.e. {n_electrons/n_triggers * 100:.1f}% of the dataset")
         
+    def plot_tof_eveto(self): 
         
+        bins = np.linspace(10, 20, 500)
+        fig, ax = plt.subplots(figsize = (8, 6))
+        filter=np.where(self.df["act_eveto"]>self.eveto_cut)
+        print(filter)
+        idx = np.where(self.df["act_eveto"]>self.eveto_cut)[0]
+        mask = np.zeros(len(self.df["act_eveto"]), dtype=bool)
+        mask[idx] = True
+        #print(self.df["tof"])
+        #self.df[self.df[population]==1][tof_var[i]],
+        ax.hist(self.df[mask==1]["tof"], bins = bins, histtype = "step")
+        ax.set_xlabel("TOF test (ns)", fontsize = 18)
+        ax.set_ylabel("Number of entries", fontsize = 18)
+        #ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) - TOF", fontsize = 20)
+        self.pdf_global.savefig(fig)
+        plt.close()
+          
+    def plot_tof_total(self):
         
+        fig, ax = plt.subplots(figsize = (8, 6))
+        tof_arr=np.array(self.df["tof"])
+        mask_1=np.where(np.logical_and(tof_arr<40,tof_arr>10))
+        data=tof_arr[mask_1]
+        kde = gaussian_kde(data,bw_method=0.1)
+        x_grid = np.linspace(min(data) - 3, max(data) + 3, 1000)
+        pdf = kde(x_grid)
+        plt.plot(x_grid, pdf, 'r-', lw=2, label='Gaussian KDE fit bandwidth 0.1')
+        peaks, properties = find_peaks(pdf, prominence=0.01)
+        self.mu_init = x_grid[peaks]
+        print(self.mu_init)
+        bins = np.linspace(10, 30, 500)
+       
+        ax.hist(self.df["tof"], bins = bins, histtype = "step",density=True)
+        ax.set_xlabel("TOF test (ns)", fontsize = 18)
+        ax.set_ylabel("Number of entries", fontsize = 18)
+        proton_tof=self.mu_init[0]+(17.47-14.81)
+        tritium_tof=self.mu_init[0]+(23.71-14.81)
+        ax.vlines(31.44, ymin=0, ymax=ax.get_ylim()[1], colors='r', linestyles='--', label='Tritium cut')
+        ax.vlines(proton_tof, ymin=0, ymax=ax.get_ylim()[1], colors='r', linestyles='--', label='Proton cut')
+        ax.vlines(self.mu_init[1], ymin=0, ymax=ax.get_ylim()[1], colors='r', linestyles='-', label='Proton cut')
+        ax.vlines(self.mu_init[0], ymin=0, ymax=ax.get_ylim()[1], colors='r', linestyles='--', label='Electron cut')
+        ax.vlines(tritium_tof, ymin=0, ymax=ax.get_ylim()[1], colors='r', linestyles='--', label='Deuterium cut')
+        ax.vlines(self.mu_init[2], ymin=0, ymax=ax.get_ylim()[1], colors='r', linestyles='-', label='Deuterium cut')
+        #plt.legend()
+        #ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) - TOF", fontsize = 20)
+        self.pdf_global.savefig(fig)
+        plt.close()
+        
+    def plot_tof_vs_charge_act02(self):
+        bins = np.linspace(10, 30, 500)
+        charge_bins = np.linspace(0, 50, 100)
+        fig, ax = plt.subplots(figsize = (8, 6))
+        h = ax.hist2d(self.df["act_eveto"], self.df["tof"], bins = (charge_bins, bins), norm=LogNorm())
+        #self.df_all["act_tagger"]
+        fig.colorbar(h[3], ax=ax)
+        ax.set_xlabel("ACT0-2 total charge (PE)", fontsize = 18)
+        ax.set_ylabel("TOF test (ns)", fontsize = 18)
+        ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) - TOF vs ACT0-2", fontsize = 20)
+        self.pdf_global.savefig(fig)
+        plt.close()
+        self.pdf_global.close()
+    def plot_tof_vs_charge_act34(self):
+        charge_bins = np.linspace(0, 70, 200)
+        fig, ax = plt.subplots(figsize = (8, 6))    
+        h, _, _ = ax.hist(self.df_all["act_tagger"], bins = charge_bins, histtype = "step")
+        ax.set_yscale("log")
+        ax.set_xlabel("ACT3-4 total charge (PE)", fontsize = 18)
+        ax.set_ylabel("Number of entries", fontsize = 18)
+        ax.legend(fontsize = 16)
+        self.pdf_global.savefig(fig)
+        plt.close()
+        
+        bins_tot = np.linspace(10, 30, 500)
+        #charge_bins = np.linspace(0, 50, 100)
+        fig, ax = plt.subplots(figsize = (8, 6))
+        h = ax.hist2d(self.df_all["act_tagger"], self.df["tof"], bins = (charge_bins, bins_tot), norm=LogNorm())
+        fig.colorbar(h[3], ax=ax)
+        ax.set_xlabel("ACT3-4 total charge (PE)", fontsize = 18)
+        ax.set_ylabel("TOF test (ns)", fontsize = 18)
+        ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) - TOF vs ACT0-2", fontsize = 20)
+        self.pdf_global.savefig(fig)
+        plt.close()
+        self.pdf_global.close()
+        
+
     def tag_electrons_ACT35(self, cut_line = 0):
-        '''Tagging the electrons based on the charge deposited in the downstream ACTs, to 'clean up the edges'''
-        
+        """
+        Tagging the electrons based on the charge deposited in the downstream ACTs, 
+        to 'clean up the edges. Simply expand the selection done by ACT01
+        """
         n_electrons_initial = sum(self.df["is_electron"])
+        
         
         #Here plot visually the electron cutline to check that it is correct
         self.plot_ACT35_left_vs_right(cut_line, "muon/electron")
@@ -1184,7 +1269,7 @@ class BeamAnalysis:
         except:
             print("Please make the proton selection using tag_protons_TOF before checking the ACT35 left vs right plot to get the most of out it")
             return 0
-        
+        self.pdf_global.close()  
         
         
         
@@ -1811,8 +1896,10 @@ class BeamAnalysis:
 
       
     def return_losses(self, n_step, dist, particle_name, momentum, total_tof, total_length, psp, verbose = False):
-        '''This function takes in the material that we are crossing, the associated energy lost table and the number of steps that we want to divide the crossing in and returns the time taken to travel the whole material and the total energy lost within it'''
-        
+        """This function takes in the material that we are crossing, 
+        the associated energy lost table and the number of steps that we want to divide the crossing in and 
+        returns the time taken to travel the whole material and the total energy lost within it
+        """
         masses = { #MeV/c
             "Electrons": 0.511,
             "Muons": 105.658,
@@ -1871,7 +1958,11 @@ class BeamAnalysis:
     
     
     def give_tof(self, particle, initial_momentum, n_eveto_group, n_tagger_group, there_is_ACT5, run_monentum, T_pair = "T0T1", verbose = True):
-        '''This function returns the T0-T1 TOF that a given particle would have as a function of its initial momentum, later to be compared with the recorded TOF for estimating the inital momentum. It is a stepper function that propagates the momentum at each step and adds up the total TOF, taking into account the momentum lost at each step'''
+        """
+        This function returns the T0-T1 TOF that a given particle would have as a function of its initial momentum, 
+        later to be compared with the recorded TOF for estimating the inital momentum.
+        It is a stepper function that propagates the momentum at each step and adds up the total TOF, taking into account the momentum lost at each step
+        """
         #the default number of steps per material is 10 but we do modify it based on the material density
         #to speed up the process whilst keeping up the accuracy
         n_step = 10
@@ -2418,7 +2509,9 @@ class BeamAnalysis:
     
     
     def extrapolate_trigger_momentum_coarse(self, initial_momentum, theoretical_tof, measured_tof, err_measured_tof):
-        '''From the theoretical TOF and the measaured tof, extrapolate the value of the momentum with the associated error, same version as abopve but working with arrays instead of single values, re-written with help from generative AI'''
+        """From the theoretical TOF and the measaured tof, extrapolate the value of the momentum with the associated error,
+        same version as abopve but working with arrays instead of single values, re-written with help from generative AI
+        """
         
         # Make sure they're numpy arrays
         initial_momentum = np.asarray(initial_momentum)
@@ -2499,8 +2592,10 @@ class BeamAnalysis:
 
             
     def estimate_momentum(self, verbose = False):
-        '''This function is estimating the momentum for each trigger based on the pre-computed PID and the material budget in the beam line. It attemps at calculating errors as well'''
-        
+        """
+        This function is estimating the momentum for each trigger based on the pre-computed PID 
+        and the material budget in the beam line. It attemps at calculating errors as well
+        """
         momentum_points = np.linspace(170, 1900, 56)
         
         #give_tof gives the nominal time of flight for particles of this type in the given momentum range
@@ -3550,7 +3645,12 @@ class BeamAnalysis:
         
                    
     def output_beam_ana_to_root(self, output_name = None):
-        ''''Output the results of the beam analysis as a root file with three branches, the 1D run information (number, nominal momentum, refractive index, whether ACT5 is in the beam line), the 1D results (mean measured [T0T1] TOF and momentum for each particle type with EOM and std for the TOF only), number of triggers kept, total number of triggers'''
+        """
+        Output the results of the beam analysis as a root file with three branches, 
+        the 1D run information (number, nominal momentum, refractive index, whether ACT5 is in the beam line),
+        the 1D results (mean measured [T0T1] TOF and momentum for each particle type with EOM and std for the TOF only), 
+        number of triggers kept, total number of triggers
+        """
         if output_name == None:
             output_name = f"beam_analysis_output_R{self.run_number}.root"
             
@@ -3592,7 +3692,7 @@ class BeamAnalysis:
 
 
             #save as a separate branch the 1d results of interest
-
+            #These are all scalars 
             results = {
                 "act_eveto_cut":np.array([self.eveto_cut], dtype=np.float64),
                 "act_tagger_cut":np.array([self.act35_cut_pi_mu], dtype=np.float64),
@@ -3633,12 +3733,34 @@ class BeamAnalysis:
             f["scalar_results"] = results 
             
             print(f"Saved output file to {output_name}")
-            
-            
+    
+    def output_to_root_tof(self,output_name=None):
+        """
+        Output the TOF results of the beam analysis as a root file.
+        """
+        if output_name == None:
+            output_name = f"beam_analysis_output_tof_R{self.run_number}.root"
+        
+        #self.df["tof"]
+        branches = {"tof":self.df["tof"].to_numpy()}
+        with uproot.recreate(output_name) as f:
+            f["tof_analysis"] = branches
+            f["run_info"] = {
+                "run_number": np.array([self.run_number], dtype=np.int32),
+                "run_momentum": np.array([self.run_momentum], dtype=np.float64),
+                "electron_tof":np.array([self.mu_init[0]], dtype=np.float64),
+                "proton_tof":np.array([self.mu_init[1]], dtype=np.float64),
+                "deuterium_tof":np.array([self.mu_init[2]], dtype=np.float64)   ,       
+            }
+  
             
             
     def output_to_root(self, output_name = None):
-        ''''Output the results of the beam analysis as a root file with three branches, the 1D run information (number, nominal momentum, refractive index, whether ACT5 is in the beam line), the 1D results (cut lines, number of triggers kept, total number of triggers) and the relevant varaibles '''
+        """
+        Output the results of the beam analysis as a root file with three branches, 
+        the 1D run information (number, nominal momentum, refractive index, whether ACT5 is in the beam line),
+        the 1D results (cut lines, number of triggers kept, total number of triggers) and the relevant varaibles
+        """
         if output_name == None:
             output_name = f"beam_analysis_output_R{self.run_number}.root"
             
@@ -4039,7 +4161,9 @@ class BeamAnalysis:
         
         
     def study_beam_structure(self):
-        """This function studies the timing difference between consecutive triggers to estimate the probability that a given bunch holds a particle and also study the temporal structure of the beam. It will be useful to correlate this with the scalar information (at some point)"""
+        """
+        This function studies the timing difference between consecutive triggers to estimate the probability that a given bunch holds a particle and also study the temporal structure of the beam. 
+        It will be useful to correlate this with the scalar information (at some point)"""
         
         #step 1: make a histogram of the timings for a given spill
         #work with all the data so we are not biased by our selection (though we will have for sure the online electron veto impact to keep in mind)  
