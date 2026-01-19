@@ -53,8 +53,8 @@ ACT3_group   = (18, 19)
 ACT4_group   = (20, 21)                 
 ACT5_group   = (22, 23)    
 """            
-act_eveto_group = [12, 13, 14, 15, 16, 17]   # ACT-eveto channels
-act_tagger_group = [18, 19, 20, 21, 22, 23]
+#act_eveto_group = [12, 13, 14, 15, 16, 17]   # ACT-eveto channels
+#act_tagger_group = [18, 19, 20, 21, 22, 23]
 #hc_group = [9, 10]
 hc_charge_cut = 150
 
@@ -303,8 +303,6 @@ def landau_gauss_convolution(x, amp, mpv, eta, sigma):
     conv = np.trapz(landau_pdf * gauss, t, axis=1)
     return amp * conv
 
-
-
 def fit_gaussian(entries, bin_centers):
     # Get bin centers from edges
 
@@ -332,17 +330,25 @@ class BeamAnalysis:
         #self.pdf_global = PdfPages(f"../notebooks/plots/PID_run{run_number}_p{run_momentum}.pdf")
         self.pdf_global = PdfPages(f"../notebooks/plots/test.pdf")
         
-
         self.reference_ids,self.t0_group,self.t1_group,self.t3_group,self.t4_group,self.ACT0_group,self.ACT1_group,self.ACT2_group,self.ACT3_group,self.ACT4_group,self.ACT5_group,self.hc_group,self.channel_mapping=channel_loading(self.trigger_config)
-        
+        self.act_eveto_group=self.ACT0_group.extend(self.ACT1_group+ self.ACT2_group)
+        self.act_tagger_group=self.ACT3_group.extend(self.ACT4_group)
+        if self.there_is_ACT5:
+            self.act_eveto_group.extend(self.ACT5_group)
+      
         #self.channel_mapping = {12: "ACT0-L", 13: "ACT0-R", 14: "ACT1-L", 15: "ACT1-R", 16: "ACT2-L", 17: "ACT2-R", 18: "ACT3-L", 19: "ACT3-R", 20: "ACT4-L", 21: "ACT4-R", 22: "ACT5-L", 23: "ACT5-R"}        
         print("Initialised the BeamAnalysis instance")
         
     def end_analysis(self):
+        """
+        close the pdf file
+        """
         self.pdf_global.close()
         
     def open_file(self, n_events = -1, require_t5 = False, first_tdc_only = True, enforce_tdc_qdc_match = True):
-        '''Read in the data as a pandas dataframe, read in the TOF and the ACt information'''
+        """
+        Read in the data as a pandas dataframe, read in the TOF and the ACt information
+        """
         
         self.require_t5_hit = require_t5
         
@@ -368,7 +374,7 @@ class BeamAnalysis:
         else:
             data = tree.arrays(branches, library="np", entry_start = 0, entry_stop = n_events)
         
-        
+    
         #read the calibration file
         with open('../include/1pe_calibration.json', 'r') as file:
             calib_constants = json.load(file)
@@ -473,20 +479,20 @@ class BeamAnalysis:
                 "check_qdc": False,
             }
         )
-            
-#         #make a list of teh groups that are necessary to have qdc for
-#         qdc_groups = [grp for grp in required_groups if grp["check_qdc"]]
-#         #initialise the count of the number of requirements that have failed
-#         group_requirement_failures = {grp["name"]: 0 for grp in required_groups}
-#         #initialise the count of the number of PMT groups that have failed
-#         qdc_failure_group_counts = {grp["name"]: 0 for grp in qdc_groups}
-#         #Store the number of T4 qdc fails and HC failures
-#         t4_qdc_failure_count = 0
-#         hc_threshold_failure_count = 0
-        
-#         #Initialise the count the number of hits in each of the T5 pairs 
-#         t5_hit_counts = np.zeros(len(t5_total_group), dtype=int) 
-        
+         """   
+        make a list of teh groups that are necessary to have qdc for
+        qdc_groups = [grp for grp in required_groups if grp["check_qdc"]]
+        #initialise the count of the number of requirements that have failed
+        group_requirement_failures = {grp["name"]: 0 for grp in required_groups}
+        #initialise the count of the number of PMT groups that have failed
+        qdc_failure_group_counts = {grp["name"]: 0 for grp in qdc_groups}
+        #Store the number of T4 qdc fails and HC failures
+        t4_qdc_failure_count = 0
+        hc_threshold_failure_count = 0
+       
+        #Initialise the count the number of hits in each of the T5 pairs 
+        t5_hit_counts = np.zeros(len(t5_total_group), dtype=int) 
+        """
         #initialise a list that will hold which T5 group(s) are being hit
         t5_bar_multiplicity = [] #if require_t5 else None
         
@@ -508,87 +514,88 @@ class BeamAnalysis:
             
             #if this event does not have any qdc entry, save that
             event_q_no_qdc_entry = (qdc_ids_evt.size == 0)
-                 
+            """
                 
-#             #store the qdc charges for each of the T4 PMTs for that event as a dict  
-#             event_t4_values = {}
-            
-            
-#             for ch_val, charge in zip(qdc_ids_evt, qdc_vals_evt):
-#                 ch = int(ch_val)
-                
-#                 if ch in t4_qdc_samples and ch in event_t4_values:
-#                     previous = event_t4_values[ch]
-#                     print(f"We have another T4 entry for channel {ch}, the previous value was: {previous}, this values is {float(charge)}")
-                
-#                 if ch in t4_qdc_samples and ch not in event_t4_values:
-#                     val = float(charge)
-#                     t4_qdc_samples[ch].append(val)
-#                     event_t4_values[ch] = val
+             #store the qdc charges for each of the T4 PMTs for that event as a dict  
+             event_t4_values = {}
+           
+           
+             for ch_val, charge in zip(qdc_ids_evt, qdc_vals_evt):
+                 ch = int(ch_val)
+               
+                 if ch in t4_qdc_samples and ch in event_t4_values:
+                     previous = event_t4_values[ch]
+                     print(f"We have another T4 entry for channel {ch}, the previous value was: {previous}, this values is {float(charge)}")
+               
+                 if ch in t4_qdc_samples and ch not in event_t4_values:
+                     val = float(charge)
+                     t4_qdc_samples[ch].append(val)
+                     event_t4_values[ch] = val
                 #testing, what happens if we have multiple entries corresponding to t
                
                     
              #below, here is where Bruno does his T4 multiple particle check. waiting for that to be finalised before including in the main code. I'd recommend first reading in the file and then making the T4 analysis and then applying an additional cut based on that before the rest of the analysis continues. 
-            
+            """
             #read in the data
             tdc_times = data["beamline_pmt_tdc_times"][evt_idx]
             tdc_ids   = data["beamline_pmt_tdc_ids"][evt_idx]
             qdc_charges = data["beamline_pmt_qdc_charges"][evt_idx]
             qdc_ids     = data["beamline_pmt_qdc_ids"][evt_idx]
             
-#             #clean up the data to only include the first TDC hit 
-#             if first_tdc_only:
-#                 tdc_ids, tdc_times, duplicates_removed = _deduplicate_tdc_hits(tdc_ids, tdc_times)
-#                 if duplicates_removed:
-#                     for ch in duplicates_removed:
-#                         channel_clean_event_counts[ch] += 1
+            """
+             #clean up the data to only include the first TDC hit 
+             if first_tdc_only:
+                 tdc_ids, tdc_times, duplicates_removed = _deduplicate_tdc_hits(tdc_ids, tdc_times)
+                 if duplicates_removed:
+                     for ch in duplicates_removed:
+                         channel_clean_event_counts[ch] += 1
                         
            
 
-#             for idx_t5, pair in enumerate(t5_total_group):
-#                 #here we are counting the number of times that the pair is in the tdc_ids 
-#                 t5_hit_counts[idx_t5] += int(np.count_nonzero(np.isin(tdc_ids, pair)))
+             for idx_t5, pair in enumerate(t5_total_group):
+                 #here we are counting the number of times that the pair is in the tdc_ids 
+                 t5_hit_counts[idx_t5] += int(np.count_nonzero(np.isin(tdc_ids, pair)))
                     
                     
                     
-#             #removes the duplicates of the tdc and qdc entries 
-#             tdc_set_full = set(int(x) for x in np.atleast_1d(tdc_ids))
-#             qdc_set_full = set(int(x) for x in np.atleast_1d(qdc_ids))
+             #removes the duplicates of the tdc and qdc entries 
+             tdc_set_full = set(int(x) for x in np.atleast_1d(tdc_ids))
+             qdc_set_full = set(int(x) for x in np.atleast_1d(qdc_ids))
             
             
-            #here we are checking if we are passing the requirements about the number of hits in each TS counter. 
-#             requirement_failed = False
-#             for group in required_groups:
-#                 if not _tdc_requirement_met(group, tdc_set_full):
-#                     group_requirement_failures[group["name"]] += 1
-#                     requirement_failed = True
-# #             if requirement_failed:
-# #                 print(f"The requirement of the TS hits is not passed for event {evt_idx}")
-# #                 continue
-                
-                
-#             #check if we have qdc failures in any of the T0, T1, T4
-#             qdc_failure_this_event = False
-#             for group in qdc_groups:
-#                 group_name = group["name"]
-#                 group_channels = group["channels"]
-#                 #if we have a tdc entry but not a qdc one then we have an issue
-#                 missing_qdc_given_tdc = any(ch in tdc_set_full and ch not in qdc_set_full for ch in group_channels)
-#                 if missing_qdc_given_tdc:
-#                     #then we count the number of qdc fails for that specific channel
-#                     qdc_failure_group_counts[group_name] += 1
-#                     qdc_failure_this_event = True
+         #here we are checking if we are passing the requirements about the number of hits in each TS counter. 
+             requirement_failed = False
+             for group in required_groups:
+                 if not _tdc_requirement_met(group, tdc_set_full):
+                     group_requirement_failures[group["name"]] += 1
+                     requirement_failed = True
+               if requirement_failed:
+                   print(f"The requirement of the TS hits is not passed for event {evt_idx}")
+                   continue
+             
+             
+             #check if we have qdc failures in any of the T0, T1, T4
+             qdc_failure_this_event = False
+             for group in qdc_groups:
+                 group_name = group["name"]
+                 group_channels = group["channels"]
+                 #if we have a tdc entry but not a qdc one then we have an issue
+                 missing_qdc_given_tdc = any(ch in tdc_set_full and ch not in qdc_set_full for ch in group_channels)
+                 if missing_qdc_given_tdc:
+                     #then we count the number of qdc fails for that specific channel
+                     qdc_failure_group_counts[group_name] += 1
+                     qdc_failure_this_event = True
                     
                     
-#Not summing this up as it slows downs the code a lot
-#             if qdc_failure_this_event:
-#                 #store the total number of events that fail the qdc count
-#                 tdc_qdc_failure_counts["qdc_failure"] += 1
-#                 if enforce_tdc_qdc_match:
-#                     #if we require a match then skip the event
-#                     tdc_qdc_failure_counts["events_skipped"] += 1
-#                     #continue
-
+            #Not summing this up as it slows downs the code a lot
+            if qdc_failure_this_event:
+                #store the total number of events that fail the qdc count
+                tdc_qdc_failure_counts["qdc_failure"] += 1
+                if enforce_tdc_qdc_match:
+                    #if we require a match then skip the event
+                    tdc_qdc_failure_counts["events_skipped"] += 1
+                    #continue
+            """
             MAX_CH = 128  #modify the dictionary based data hadnling to array
 
             corrected = np.full(MAX_CH, np.nan)
@@ -631,25 +638,25 @@ class BeamAnalysis:
                 reference_time = ref0 if ch <= self.reference_ids[0] else ref1
                 corrected[ch] = t - reference_time
             
-#             qdc_dict = {}
-#             tdc_dict = {}
-#             pe_dict = {}
+            #qdc_dict = {}
+            #tdc_dict = {}
+            #pe_dict = {}
             for ch, q in zip(qdc_ids, qdc_charges):
                 if np.isnan(qdc_vals[ch]):
                     qdc_vals[ch] = q
 
-                    if (ch in act_eveto_group) or (ch in act_tagger_group):  
+                    if (ch in self.act_eveto_group) or (ch in self.act_tagger_group):  
                         #use mean gain and mean pedestal, find it in the calibration data base
-#                         calib_index = calibration["channel_id"].index(ch)
-#                         gain = calibration["gain_value"][calib_index]
-#                         pedestal = calibration["pedestal_mean"][calib_index]
+                         #calib_index = calibration["channel_id"].index(ch)
+                         #gain = calibration["gain_value"][calib_index]
+                         #pedestal = calibration["pedestal_mean"][calib_index]
                         gain, pedestal = calib_map[ch]
                         pe_vals[ch] = (q-pedestal)/gain 
 
             
             event_q_t0_or_t1_missing_tdc = False
             # require all channels on T0/T1 before computing averages
-#             if not all(ch in corrected for ch in t0_group+t1_group):
+            #if not all(ch in corrected for ch in t0_group+t1_group):
             if not all(not np.isnan(corrected[ch]) for ch in self.t0_group+self.t1_group):
                 keep_event = False
                 event_q_t0_or_t1_missing_tdc = True
@@ -657,10 +664,10 @@ class BeamAnalysis:
                 t1 = None
                 
             else:
-#                 t0 = np.mean([corrected[ch] for ch in t0_group])
+                #t0 = np.mean([corrected[ch] for ch in t0_group])
                 vals = [corrected[ch] for ch in self.t0_group]
                 t0 = sum(vals) / len(vals)
-#                 t1 = np.mean([corrected[ch] for ch in t1_group])
+                #t1 = np.mean([corrected[ch] for ch in t1_group])
                 vals = [corrected[ch] for ch in self.t1_group]
                 t1 = sum(vals) / len(vals)
 
@@ -697,7 +704,7 @@ class BeamAnalysis:
                 
                 
             event_q_t4_missing_qdc = False
-#             if not all(ch in qdc_dict for ch in t4_group):
+            #if not all(ch in qdc_dict for ch in t4_group):
             if not all(not np.isnan(qdc_vals[ch]) for ch in self.t4_group):
                 keep_event = False
                 event_q_t4_missing_qdc = True
@@ -724,15 +731,15 @@ class BeamAnalysis:
             t5_earliest_time = min(t5_bar_means) if t5_bar_means else None
             t5_more_than_one_hit = (len(t5_bar_means)>1)
             #the multiplicity shows how many bars are being hit, this could be a useful way to identify multiple particle events
-#             if t5_bar_multiplicity is not None:
+            #if t5_bar_multiplicity is not None:
             t5_bar_multiplicity.append(len(t5_bar_means))
                 
 
             #--------- HC cut ----------
             event_q_hc_hit = False
-#             if (any(qdc_dict.get(ch, 0) >= hc_charge_cut for ch in hc_group)):
-#                 keep_event = False  # if either HC channel fired with charge ≥ threshold, skip event
-#                 event_q_hc_hit = True
+            #if (any(qdc_dict.get(ch, 0) >= hc_charge_cut for ch in hc_group)):
+            #     keep_event = False  # if either HC channel fired with charge ≥ threshold, skip event
+            #     event_q_hc_hit = True
             for ch in self.hc_group:
                 if qdc_vals[ch] >= hc_charge_cut:
                     keep_event = False
@@ -746,8 +753,7 @@ class BeamAnalysis:
             t0_avgs_second_hit[evt_idx] = t0_second_hit
             t1_avgs_second_hit[evt_idx] = t1_second_hit
             t4_avgs_second_hit[evt_idx] = t4_second_hit
-            
-            
+        
             t4_l_array[evt_idx] = t4_l
             t4_r_array[evt_idx] = t4_r
             
@@ -805,7 +811,7 @@ class BeamAnalysis:
             spill_id = data["spill_counter"][evt_idx]
             spill_number[evt_idx] = spill_id
 
-#             total_TOF_charge.append(qdc_dict.get(48, 0)+ qdc_dict.get(49, 0)+ qdc_dict.get(50, 0)+ qdc_dict.get(51, 0)+ qdc_dict.get(52, 0)+ qdc_dict.get(53, 0)+ qdc_dict.get(54, 0)+ qdc_dict.get(55, 0)+ qdc_dict.get(56, 0)+ qdc_dict.get(57, 0)+ qdc_dict.get(58, 0)+ qdc_dict.get(59, 0)+ qdc_dict.get(60, 0)+ qdc_dict.get(61, 0)+ qdc_dict.get(62, 0)+ qdc_dict.get(63, 0))
+            #total_TOF_charge.append(qdc_dict.get(48, 0)+ qdc_dict.get(49, 0)+ qdc_dict.get(50, 0)+ qdc_dict.get(51, 0)+ qdc_dict.get(52, 0)+ qdc_dict.get(53, 0)+ qdc_dict.get(54, 0)+ qdc_dict.get(55, 0)+ qdc_dict.get(56, 0)+ qdc_dict.get(57, 0)+ qdc_dict.get(58, 0)+ qdc_dict.get(59, 0)+ qdc_dict.get(60, 0)+ qdc_dict.get(61, 0)+ qdc_dict.get(62, 0)+ qdc_dict.get(63, 0))
             
             event_id[evt_idx] = evt_idx
 
@@ -839,7 +845,6 @@ class BeamAnalysis:
             #the bitmask that handles issues related to digitisation 
             bitmask_digitisation = write_event_quality_mask(flags_digi, self.digitisation_issues_flag_map)
             digi_issues_bitmask[evt_idx] = bitmask_digitisation 
-            
             
             
             #here we are obtaining the bitmask corresponding to this specific set of flags 
@@ -887,7 +892,7 @@ class BeamAnalysis:
             "act4_r": act4_r,
             "act5_r": act5_r,
             "event_id":event_id,
-#             "total_TOF_charge":total_TOF_charge,
+            #"total_TOF_charge":total_TOF_charge,
             "act0_time_l": act0_time_l,
             "act0_time_r": act0_time_r,
             "tof": tof_vals,
@@ -941,55 +946,53 @@ class BeamAnalysis:
         #store the id of the events of interest
         self.is_kept_event_id = is_kept_event_id                          
         pbar.close()
-        
-#         print(f"Total weight of self.df: {self.df.memory_usage(deep=True).sum()/ (1024**2):.2f}Mb")
-        
-#         summary_groups = ", ".join(grp["name"] for grp in required_groups)
-#         print(f"Required channel presence summary ({summary_groups}) — TDC only:")
-#         if any(group_requirement_failures.values()):
-#             for group in required_groups:
-#                 group_name = group["name"]
-#                 failures = group_requirement_failures[group_name]
-#                 percent = (failures / nEvents * 100) if nEvents else 0
-#                 print(f"  {group_name}: skipped {failures}/{nEvents} events ({percent:.2f}%) due to missing TDC IDs")
-#         else:
-#             print("  No events skipped for missing required TDC channels.")
-
-#         print("QDC failure summary (TDC present, missing QDC):")
-#         if qdc_failure_group_counts and any(qdc_failure_group_counts.values()):
-#             for group in qdc_groups:
-#                 group_name = group["name"]
-#                 failures = qdc_failure_group_counts[group_name]
-#                 percent = (failures / nEvents * 100) if nEvents else 0
-#                 print(f"  {group_name}: {failures}/{nEvents} events ({percent:.2f}%) had TDC with no QDC match")
-#             total_failures = tdc_qdc_failure_counts["qdc_failure"]
-#             print(f"  Total events with QDC failures: {total_failures}/{nEvents}")
-#         else:
-#             print("  No QDC failures detected in required channels.")
-
-#         print("T4 QDC threshold summary:")
-#         if t4_qdc_failure_count:
-#             percent = (t4_qdc_failure_count / nEvents * 100) if nEvents else 0
-#             print(f"  Failed T4 QDC cut: {t4_qdc_failure_count}/{nEvents} events ({percent:.2f}%) removed.")
-#         else:
-#             print("  All events passed the T4 QDC cut.")
-
-#         print("HC charge veto summary:")
-#         if hc_threshold_failure_count:
-#             percent = (hc_threshold_failure_count / nEvents * 100) if nEvents else 0
-#             print(f"  Failed HC charge cut: {hc_threshold_failure_count}/{nEvents} events ({percent:.2f}%) removed.")
-#         else:
-#             print("  All events passed the HC charge cut.")
-
-#         if first_tdc_only:
-#             print("TDC duplicate-removal summary:")
-#             if channel_clean_event_counts:
-#                 for ch in sorted(channel_clean_event_counts):
-#                     events_cleaned = channel_clean_event_counts[ch]
-#                     percent = (events_cleaned / nEvents * 100) if nEvents else 0
-#                     print(f"  Channel {ch}: {events_cleaned}/{nEvents} events ({percent:.2f}%) had repeated TDC IDs cleaned")
-#             else:
-#                 print("No duplicate TDC hits detected.")
+        #Check for failure on the TDC 
+        """
+        print(f"Total weight of self.df: {self.df.memory_usage(deep=True).sum()/ (1024**2):.2f}Mb")
+      
+       summary_groups = ", ".join(grp["name"] for grp in required_groups)
+       print(f"Required channel presence summary ({summary_groups}) — TDC only:")
+       if any(group_requirement_failures.values()):
+           for group in required_groups:
+               group_name = group["name"]
+               failures = group_requirement_failures[group_name]
+               percent = (failures / nEvents * 100) if nEvents else 0
+               print(f"  {group_name}: skipped {failures}/{nEvents} events ({percent:.2f}%) due to missing TDC IDs")
+       else:
+           print("  No events skipped for missing required TDC channels.")
+       print("QDC failure summary (TDC present, missing QDC):")
+       if qdc_failure_group_counts and any(qdc_failure_group_counts.values()):
+           for group in qdc_groups:
+               group_name = group["name"]
+               failures = qdc_failure_group_counts[group_name]
+               percent = (failures / nEvents * 100) if nEvents else 0
+               print(f"  {group_name}: {failures}/{nEvents} events ({percent:.2f}%) had TDC with no QDC match")
+           total_failures = tdc_qdc_failure_counts["qdc_failure"]
+           print(f"  Total events with QDC failures: {total_failures}/{nEvents}")
+       else:
+           print("  No QDC failures detected in required channels.")
+       print("T4 QDC threshold summary:")
+       if t4_qdc_failure_count:
+           percent = (t4_qdc_failure_count / nEvents * 100) if nEvents else 0
+           print(f"  Failed T4 QDC cut: {t4_qdc_failure_count}/{nEvents} events ({percent:.2f}%) removed.")
+       else:
+           print("  All events passed the T4 QDC cut.")
+       print("HC charge veto summary:")
+       if hc_threshold_failure_count:
+           percent = (hc_threshold_failure_count / nEvents * 100) if nEvents else 0
+           print(f"  Failed HC charge cut: {hc_threshold_failure_count}/{nEvents} events ({percent:.2f}%) removed.")
+       else:
+           print("  All events passed the HC charge cut.")
+       if first_tdc_only:
+           print("TDC duplicate-removal summary:")
+           if channel_clean_event_counts:
+               for ch in sorted(channel_clean_event_counts):
+                   events_cleaned = channel_clean_event_counts[ch]
+                   percent = (events_cleaned / nEvents * 100) if nEvents else 0
+                   print(f"  Channel {ch}: {events_cleaned}/{nEvents} events ({percent:.2f}%) had repeated TDC IDs cleaned")
+           else:
+               print("No duplicate TDC hits detected.")
+            """
         
         
     def adjust_1pe_calibration(self):
@@ -1007,7 +1010,7 @@ class BeamAnalysis:
             #actually change the array: pedestal shifted: can do as many times as we want, will just substract 0 all the n>1 times we do it
             self.df[PMT] -= value_ped 
             self.df_all[PMT] -= value_ped 
-#             self.PMT_value_ped.append(value_ped)
+            #self.PMT_value_ped.append(value_ped)
             
             h, _, _ = ax.hist(self.df[PMT], bins = bins, histtype = "step", label = "+ pedestal shift")
             #plot the pedestal and 1 pe peak, for now reading from the pre-made calibration, eventually, will have to be made run 
@@ -1041,18 +1044,15 @@ class BeamAnalysis:
             ax.set_ylabel("Number of entries", fontsize = 18)
             ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) - {PMT}", fontsize = 18)
             ax.grid()
-            #with PdfPages(f"../notebooks/plots/PID_run_test.pdf") as pdf:
             self.pdf_global.savefig(fig)
             plt.close()
-        #self.pdf_global.close()   
         print("One PE calibration finished, please don't forget to check that it is correct")
         
         
         
     def tag_electrons_ACT02(self, tightening_factor = 0):
         """
-        Docstring for tag_electrons_ACT02
-        :param tightening_factor: Description
+        :param tightening_factor: Just to make a larger cut on the electrons
         Tagging the electrons based on the charge deposited in the upstream ACTs,
         add an additional scale factor to tighten the cut some more (validated)
         """
@@ -1082,39 +1082,43 @@ class BeamAnalysis:
         ax.set_ylabel("Number of entries", fontsize = 18)
         ax.legend(fontsize = 16)
         ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c)- ACT0-2", fontsize = 20)
-#         pdf.savefig()
         self.pdf_global.savefig(fig)
         plt.close()
         
         #make sure that the particle is not already a slow travelling particle, proton or deuterium
-        self.df["is_electron"] = np.where(self.df["act_eveto"]>self.eveto_cut, (self.df["tof"]<proton_tof_cut), False)
+        #self.df["is_electron"] = np.where(self.df["act_eveto"]>self.eveto_cut, (self.df["tof"]<proton_tof_cut), False)
         n_electrons = sum(self.df["is_electron"])
         n_triggers = len(self.df["is_electron"])
         print(f"A total of {n_electrons} electrons are tagged with ACT02 out of {n_triggers}, i.e. {n_electrons/n_triggers * 100:.1f}% of the dataset")
         
     def plot_tof_eveto(self): 
+        """
+        Plot the TOF for the events that are tagged as electrons based on the ACT0-2 cut line
+        """
         
         bins = np.linspace(10, 20, 500)
         fig, ax = plt.subplots(figsize = (8, 6))
-        filter=np.where(self.df["act_eveto"]>self.eveto_cut)
-        print(filter)
+        
         idx = np.where(self.df["act_eveto"]>self.eveto_cut)[0]
         mask = np.zeros(len(self.df["act_eveto"]), dtype=bool)
         mask[idx] = True
         #print(self.df["tof"])
         #self.df[self.df[population]==1][tof_var[i]],
         ax.hist(self.df[mask==1]["tof"], bins = bins, histtype = "step")
-        ax.set_xlabel("TOF test (ns)", fontsize = 18)
+        ax.set_xlabel("TOF (ns)", fontsize = 18)
         ax.set_ylabel("Number of entries", fontsize = 18)
-        #ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) - TOF", fontsize = 20)
+        ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) Electron selection with the TOF", fontsize = 20)
         self.pdf_global.savefig(fig)
         plt.close()
           
     def plot_tof_total(self):
+        """
+        Plot the TOF for the beam, identifying the different peaks with a gaussian KDE fit
+        """
         
         fig, ax = plt.subplots(figsize = (8, 6))
         tof_arr=np.array(self.df["tof"])
-        mask_1=np.where(np.logical_and(tof_arr<40,tof_arr>10))
+        mask_1=np.where(np.logical_and(tof_arr<40,tof_arr>10)) #Initial filtering
         data=tof_arr[mask_1]
         kde = gaussian_kde(data,bw_method=0.1)
         x_grid = np.linspace(min(data) - 3, max(data) + 3, 1000)
