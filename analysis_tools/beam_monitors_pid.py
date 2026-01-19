@@ -1111,9 +1111,9 @@ class BeamAnalysis:
         self.pdf_global.savefig(fig)
         plt.close()
           
-    def plot_tof_total(self):
+    def plot_tof_total(self,proton=False):
         """
-        Plot the TOF for the beam, identifying the different peaks with a gaussian KDE fit
+        Plot the TOF for the beam, identifying the different peaks with a gaussian KDE fit for a proton run
         """
         
         fig, ax = plt.subplots(figsize = (8, 6))
@@ -1126,31 +1126,33 @@ class BeamAnalysis:
         plt.plot(x_grid, pdf, 'r-', lw=2, label='Gaussian KDE fit bandwidth 0.1')
         peaks, properties = find_peaks(pdf, prominence=0.01)
         self.mu_init = x_grid[peaks]
-        print(self.mu_init)
+        print("This is the fitted mean position of the peaks",self.mu_init)
+        
         bins = np.linspace(10, 30, 500)
-       
         ax.hist(self.df["tof"], bins = bins, histtype = "step",density=True)
-        ax.set_xlabel("TOF test (ns)", fontsize = 18)
+        ax.set_xlabel("TOF (ns)", fontsize = 18)
         ax.set_ylabel("Number of entries", fontsize = 18)
-        proton_tof=self.mu_init[0]+(17.47-14.81)
-        tritium_tof=self.mu_init[0]+(23.71-14.81)
-        ax.vlines(31.44, ymin=0, ymax=ax.get_ylim()[1], colors='r', linestyles='--', label='Tritium cut')
-        ax.vlines(proton_tof, ymin=0, ymax=ax.get_ylim()[1], colors='r', linestyles='--', label='Proton cut')
-        ax.vlines(self.mu_init[1], ymin=0, ymax=ax.get_ylim()[1], colors='r', linestyles='-', label='Proton cut')
-        ax.vlines(self.mu_init[0], ymin=0, ymax=ax.get_ylim()[1], colors='r', linestyles='--', label='Electron cut')
-        ax.vlines(tritium_tof, ymin=0, ymax=ax.get_ylim()[1], colors='r', linestyles='--', label='Deuterium cut')
-        ax.vlines(self.mu_init[2], ymin=0, ymax=ax.get_ylim()[1], colors='r', linestyles='-', label='Deuterium cut')
+        if proton:
+            proton_tof=self.mu_init[0]+(17.47-14.81) 
+            tritium_tof=self.mu_init[0]+(23.71-14.81)
+            ax.vlines(31.44, ymin=0, ymax=ax.get_ylim()[1], colors='r', linestyles='--', label='Tritium cut')
+            ax.vlines(proton_tof, ymin=0, ymax=ax.get_ylim()[1], colors='r', linestyles='--', label='Proton cut')
+            ax.vlines(tritium_tof, ymin=0, ymax=ax.get_ylim()[1], colors='r', linestyles='--', label='Deuterium cut')
+        for peak in self.mu_init:
+            ax.vlines(peak, ymin=0, ymax=ax.get_ylim()[1], colors='g', linestyles='--')
         #plt.legend()
-        #ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) - TOF", fontsize = 20)
+        ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) - TOF spectrum and peak identification", fontsize = 20)
         self.pdf_global.savefig(fig)
         plt.close()
         
     def plot_tof_vs_charge_act02(self):
+        """
+        Plot the TOF vs the charge deposited in the electron veto
+        """
         bins = np.linspace(10, 30, 500)
         charge_bins = np.linspace(0, 50, 100)
         fig, ax = plt.subplots(figsize = (8, 6))
         h = ax.hist2d(self.df["act_eveto"], self.df["tof"], bins = (charge_bins, bins), norm=LogNorm())
-        #self.df_all["act_tagger"]
         fig.colorbar(h[3], ax=ax)
         ax.set_xlabel("ACT0-2 total charge (PE)", fontsize = 18)
         ax.set_ylabel("TOF test (ns)", fontsize = 18)
@@ -1158,8 +1160,9 @@ class BeamAnalysis:
         self.pdf_global.savefig(fig)
         plt.close()
         self.pdf_global.close()
+        
     def plot_tof_vs_charge_act34(self):
-        charge_bins = np.linspace(0, 70, 200)
+        charge_bins = np.linspace(0, 70, 100)
         fig, ax = plt.subplots(figsize = (8, 6))    
         h, _, _ = ax.hist(self.df_all["act_tagger"], bins = charge_bins, histtype = "step")
         ax.set_yscale("log")
@@ -1170,13 +1173,12 @@ class BeamAnalysis:
         plt.close()
         
         bins_tot = np.linspace(10, 30, 500)
-        #charge_bins = np.linspace(0, 50, 100)
         fig, ax = plt.subplots(figsize = (8, 6))
         h = ax.hist2d(self.df_all["act_tagger"], self.df["tof"], bins = (charge_bins, bins_tot), norm=LogNorm())
         fig.colorbar(h[3], ax=ax)
         ax.set_xlabel("ACT3-4 total charge (PE)", fontsize = 18)
         ax.set_ylabel("TOF test (ns)", fontsize = 18)
-        ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) - TOF vs ACT0-2", fontsize = 20)
+        ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) - TOF vs ACT3-4", fontsize = 20)
         self.pdf_global.savefig(fig)
         plt.close()
         self.pdf_global.close()
@@ -1198,9 +1200,7 @@ class BeamAnalysis:
         self.df["is_electron"] = np.where(self.df["act_tagger"]>cut_line, (self.df["tof"]<proton_tof_cut), self.df["is_electron"])
         
         self.act35_e_cut = cut_line
-        
- 
-          
+
         
         n_electrons = sum(self.df["is_electron"])
         n_triggers = len(self.df["is_electron"])
@@ -1317,8 +1317,6 @@ class BeamAnalysis:
         
         print(f"A total of {n_protons} protons and {n_deuteron} deuterons nuclei are tagged using the TOF out of {n_triggers}, i.e. {n_protons/n_triggers * 100:.1f}% of the dataset are protons and {n_deuteron/n_triggers * 100:.1f}% are deuteron")
         print(f"A total of {n_helium3} helium3 nuclei, {n_tritium} tritium nuclei and {n_lithium6} lithium 6 nuclei are tagged using the TOF out of {n_triggers}, i.e. {n_helium3/n_triggers * 100:.2f}% of the dataset are helium3, {n_tritium/n_triggers * 100:.1f}% are tritium, {n_lithium6/n_triggers * 100:.2f} lithium 6 nuclei")
-        
-        
         
         
         
@@ -1719,7 +1717,9 @@ class BeamAnalysis:
         
         
     def write_output_particles(self, particle_number_dict, store_PID_info, filename = None):
-        """This functions writes out the WCTE tank information as well as the additional beam variables (TOF, ACT charges) necessary for making the selection, This function also stores the particle type guess obtained from the beam data but we encourage each analyser to develop their own selection"""
+        """This functions writes out the WCTE tank information as well as the additional beam variables (TOF, ACT charges) 
+        necessary for making the selection, This function also stores the particle type guess obtained from the beam data 
+        but we encourage each analyser to develop their own selection"""
         
         
         if store_PID_info:
@@ -1785,9 +1785,7 @@ class BeamAnalysis:
             particle_labels = (
                 ["particle"] * len(all_keep_idx)
             )
-            
-            
-            
+        
             
         all_keep_idx = np.array(all_keep_idx)
         particle_labels = np.array(particle_labels)
@@ -1915,10 +1913,7 @@ class BeamAnalysis:
             "Tritium": 2808.921,
             
         }
-        
-        
         factor = 1 #for all other particles we have the correct table, no need for a multiplicative factor
-        
         if particle_name == "Helium3":
             factor = 36
         if particle_name == "Tritium":
@@ -1957,11 +1952,10 @@ class BeamAnalysis:
                 particle_kinetic_energy -= stoppingPower * factor * delta_L
 
                 momentum[i] = np.sqrt((particle_kinetic_energy + masses[particle_name])**2 - masses[particle_name]**2)
-
         return momentum, total_tof, total_length
     
     
-    def give_tof(self, particle, initial_momentum, n_eveto_group, n_tagger_group, there_is_ACT5, run_monentum, T_pair = "T0T1", verbose = True):
+    def give_tof(self, particle, initial_momentum, there_is_ACT5,run_monentum, n_eveto_group=0, n_tagger_group=0, T_pair = "T0T1", verbose = True):
         """
         This function returns the T0-T1 TOF that a given particle would have as a function of its initial momentum, 
         later to be compared with the recorded TOF for estimating the inital momentum.
@@ -1970,9 +1964,6 @@ class BeamAnalysis:
         #the default number of steps per material is 10 but we do modify it based on the material density
         #to speed up the process whilst keeping up the accuracy
         n_step = 10
-        
-     
-    
         momentum = initial_momentum.copy()
 
         #Set up the ACTs with dimensions given by Sirous
@@ -1986,9 +1977,6 @@ class BeamAnalysis:
         elif (self.n_eveto == 1.075):
             ACT02_material = "1p075"
             ACT02_thick_per_box = 0.10/3 #cm
-            
-
-
         if (self.n_tagger == 1.047):
             ACT35_material = "1p047"
             ACT35_thick_per_box = 0.16/3
@@ -2021,8 +2009,6 @@ class BeamAnalysis:
 
         #store the total thickness plus 0.34 mm which is for the various reflective sheets and black tape
         ACT02_thickness = 3 * (ACT02_thick_per_box + 0.34e-3)
-
-
         if self.there_is_ACT5:
             ACT35_thickness = (ACT35_thick_per_box + 0.34e-3) * 3
         else:
@@ -2030,9 +2016,7 @@ class BeamAnalysis:
 
         #Improved method for detector distances and dimensions: use Bruno's yaml file.  
         
-        det_module = db.from_yaml("../include/wcte_beam_detectors.yaml")
-
-           
+        det_module = db.from_yaml("../include/wcte_beam_detectors.yaml")    
         #Trigger scintillators assumed to be all the same thickness, from Bruno's slides
         #This TS thickness is only the acrylic part 
         t0_thickness =  det_module.get_thickness_m("T0", "scintillator") #6.4e-3 #mm to m
@@ -2070,7 +2054,6 @@ class BeamAnalysis:
 #         L_air_T4_to_T1 = L_t4t1 - ACT02_thickness - ACT35_thickness + additional_length #- 0.06 - 0.003  
         L_air_T4_to_T1 = L_t4t1 - ACT02_thickness - ACT35_thickness - T4_total_thickness/2 - T1_total_thickness/2 #- 0.06 - 0.003  
         #0.06 is the default value, 0.003 is the fine tune based on momentum measurements, see Alie's slides: https://wcte.hyperk.ca/wg/beam/meetings/2025/20250922/meeting/momentum-estimation-from-tof/acraplet_20250922_wctebeam.pdf
-
 
         #check what particle we have
         masses = { #MeV/c
@@ -2142,16 +2125,12 @@ class BeamAnalysis:
         with open(losses_dataset_mylar, mode = 'r') as file:
             psp_mylar = pd.read_csv(file)
 
-
-
         if verbose: print(f"\n The initial momenta considered for the {p_name} are {momentum}") 
 
             
         #reset the time of flight and the total length, will do again laterbut necessary for the Mylar to have
         total_tof = np.zeros(len(momentum))
         total_length = 0
-        
-        
         
         #re-write this code a bit cleaner, account for the dEdx at each step
         #To be cleaned up/expanded on, when ready
@@ -2290,11 +2269,6 @@ class BeamAnalysis:
                               "T5_vinyl",
                               "air_T5_to_window", 
                               "WCTE_window"]
-        
-        
-        
-        
-        
         #We look into the initial momenta as the particle exits the beam pipe 
         #need to take into account the energy lost to the Mylar window
 
@@ -2312,7 +2286,6 @@ class BeamAnalysis:
         #Actually, say the TOF starts at the very beginning of T0
         
         momentum, total_tof, total_length = self.return_losses(3, 0.18e-3, particle_name, momentum, total_tof, total_length, psp_plasticScintillator, verbose = verbose)
-
 
         ################## beginning of TOF calculation
         #reset the time of flight and the total length
@@ -2490,7 +2463,9 @@ class BeamAnalysis:
         
         
     def extrapolate_momentum(self, initial_momentum, theoretical_tof, measured_tof, err_measured_tof):
-        '''From the theoretical TOF and the measaured tof, extrapolate the value of the momentum with the associated error ''' 
+        """
+        From the theoretical TOF and the measaured tof, extrapolate the value of the momentum with the associated error 
+        """ 
         diff_m_exp = list(abs(theoretical_tof-measured_tof)) 
         A = diff_m_exp.index(min(diff_m_exp)) 
         print(A, measured_tof, theoretical_tof)
