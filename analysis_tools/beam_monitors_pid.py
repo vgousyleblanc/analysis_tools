@@ -13,13 +13,16 @@ import awkward as ak
 import pyarrow as pa, pyarrow.parquet as pq
 import gc
 from scipy.stats import gaussian_kde
+from scipy.stats import norm
 from scipy.signal import find_peaks
 #for the nice progress bar
 from tqdm import tqdm
-
+from scipy.ndimage import gaussian_filter1d
+from scipy.signal import find_peaks
 import os, shutil, subprocess, time, hashlib
-
+from scipy import optimize
 from collections import defaultdict
+from sklearn.mixture import GaussianMixture
 
 import sys
 # sys.path.append("/eos/user/a/acraplet/analysis_tools/")
@@ -31,7 +34,7 @@ c = 0.299792458 #in m.ns^-1 do not change the units please as these are called t
 L =  444.03 #4.3431
 L_t0t4 = 305.68 #2.9485
 L_t4t1 = 143.38 #1.3946
-
+repo_loc="/eos/user/v/vgousyle/proton_search/analysis_tools/"
 # Particle masses in GeV/c^2
 particle_masses = {
     "Electrons": 0.000511,
@@ -328,15 +331,20 @@ class BeamAnalysis:
         self.there_is_ACT5 = there_is_ACT5
         self.trigger_config=trigger_config
         #self.pdf_global = PdfPages(f"../notebooks/plots/PID_run{run_number}_p{run_momentum}.pdf")
-        self.pdf_global = PdfPages(f"../notebooks/plots/test.pdf")
+        self.pdf_global = PdfPages(repo_loc+"notebooks/plots/test.pdf")
         
         self.reference_ids,self.t0_group,self.t1_group,self.t3_group,self.t4_group,self.ACT0_group,self.ACT1_group,self.ACT2_group,self.ACT3_group,self.ACT4_group,self.ACT5_group,self.hc_group,self.channel_mapping=channel_loading(self.trigger_config)
-        self.act_eveto_group=self.ACT0_group.extend(self.ACT1_group+ self.ACT2_group)
-        self.act_tagger_group=self.ACT3_group.extend(self.ACT4_group)
+        self.act_eveto_group=self.ACT0_group+self.ACT1_group+ self.ACT2_group
+        self.act_tagger_group=self.ACT3_group+self.ACT4_group
         if self.there_is_ACT5:
-            self.act_eveto_group.extend(self.ACT5_group)
-      
+            self.act_tagger_group=self.act_tagger_group+self.ACT5_group
         #self.channel_mapping = {12: "ACT0-L", 13: "ACT0-R", 14: "ACT1-L", 15: "ACT1-R", 16: "ACT2-L", 17: "ACT2-R", 18: "ACT3-L", 19: "ACT3-R", 20: "ACT4-L", 21: "ACT4-R", 22: "ACT5-L", 23: "ACT5-R"}        
+        self.electron_tof_th=self.TOF_particle_in_ns("Electrons",self.run_momentum) 
+        self.muon_tof_th=self.TOF_particle_in_ns("Muons",self.run_momentum) 
+        self.pion_tof_th=self.TOF_particle_in_ns("Pions",self.run_momentum) 
+        self.proton_tof_th=self.TOF_particle_in_ns("Protons",self.run_momentum) 
+        self.deuterium_tof_th=self.TOF_particle_in_ns("Deuteron",self.run_momentum) 
+        self.tritium_tof_th=self.TOF_particle_in_ns("Tritium",self.run_momentum) 
         print("Initialised the BeamAnalysis instance")
         
     def end_analysis(self):
@@ -376,7 +384,7 @@ class BeamAnalysis:
         
     
         #read the calibration file
-        with open('../include/1pe_calibration.json', 'r') as file:
+        with open(repo_loc+"include/1pe_calibration.json", 'r') as file:
             calib_constants = json.load(file)
 
         # Access the calibration constants
@@ -479,7 +487,7 @@ class BeamAnalysis:
                 "check_qdc": False,
             }
         )
-         """   
+        """   
         make a list of teh groups that are necessary to have qdc for
         qdc_groups = [grp for grp in required_groups if grp["check_qdc"]]
         #initialise the count of the number of requirements that have failed
@@ -1048,7 +1056,80 @@ class BeamAnalysis:
             plt.close()
         print("One PE calibration finished, please don't forget to check that it is correct")
         
+    def tag_electron_ACT02_2(self, tightening_factor = 0):  
+        """
+        :param tightening_factor: Just to make a larger cut on the electrons
+        Tagging the electrons based on the charge deposited in the upstream ACTs,
+        add an additional scale factor to tighten the cut some more (validated)
+        """
+        bins = np.linspace(-10, 50, 300)
+        fig, ax = plt.subplots(figsize = (8, 6))    
+        h, _, _ = ax.hist(self.df["act_eveto"], bins = bins, histtype = "step")
+        h, bins = np.histogram(self.df["act_eveto"], bins=bins)
+        #automatically find the middle of the least populated bin within 4 and 15 PE
+        bin_centers = 0.5 * (bins[:-1] + bins[1:])
+        h_smooth = gaussian_filter1d(h.astype(float), sigma=2)
+        peaks, _ = find_peaks(h_smooth,distance=50,prominence=5)
+        print("These are the peaks",peaks)
         
+        p1, p2 = sorted(peaks, key=lambda i: h_smooth[i], reverse=True)[:2]
+        left, right = sorted([p1, p2])
+        print(h_smooth[peaks])
+        plt.plot(bin_centers[peaks],h_smooth[peaks],'.')
+        plt.plot(bin_centers, h_smooth, label='Smoothed Histogram')
+        # Minimum between them
+        cut_index = left + np.argmin(h_smooth[left:right])
+        self.eveto_cut = bin_centers[cut_index]
+
+        ax.axvline(self.eveto_cut, linestyle = '--', color = 'black', label = f'Optimal electron rejection veto: {self.eveto_cut:.1f} PE')
+        
+        if tightening_factor!=0:
+            self.eveto_cut = self.eveto_cut * (1 - tightening_factor/100)
+            ax.axvline(self.eveto_cut, linestyle = '--', color = 'red', label = f'with tightening factor ({tightening_factor}%): {self.eveto_cut:.1f} PE')
+        ax.set_yscale("log")
+        ax.set_xlabel("ACT0-2 total charge (PE)", fontsize = 18)
+        ax.set_ylabel("Number of entries", fontsize = 18)
+        ax.legend(fontsize = 16)
+        ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c)- ACT0-2", fontsize = 20)
+        self.pdf_global.savefig(fig)
+        plt.close()
+        
+        #make sure that the particle is not already a slow travelling particle, proton or deuterium
+        self.df["is_electron"] = np.where(self.df["act_eveto"]>self.eveto_cut, (self.df["tof"]<proton_tof_cut), False)
+        n_electrons = sum(self.df["is_electron"])
+        n_triggers = len(self.df["is_electron"])
+        print(f"A total of {n_electrons} electrons are tagged with ACT02 out of {n_triggers}, i.e. {n_electrons/n_triggers * 100:.1f}% of the dataset")
+
+        bins = np.linspace(10, 30, 500)
+        charge_bins = np.linspace(0, 50, 100)
+        fig, ax = plt.subplots(figsize = (8, 6))
+        h = ax.hist2d(self.df["act_eveto"], self.df["tof"], bins = (charge_bins, bins), norm=LogNorm())
+        fig.colorbar(h[3], ax=ax)
+        ax.set_xlabel("ACT0-2 total charge (PE)", fontsize = 18)
+        ax.set_ylabel("TOF test (ns)", fontsize = 18)
+        ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) - TOF vs ACT0-2", fontsize = 20)
+        self.pdf_global.savefig(fig)
+        plt.close()
+        bins_electrons = np.linspace(10, self.electron_tof_th+5, 500)
+        counts,bins=np.histogram(self.df[self.df["is_electron"] == 1]["tof"], bins = bins_electrons)
+        mask = np.ones(len(bins)-1, dtype=bool)
+        mask = mask & (counts[:] != 0)
+        x_fit = bins[:-1][mask] + np.diff(bins)[0] / 2
+        x_all = bins[:-1] + np.diff(bins)[0] / 2
+        y_fit = counts[mask]
+        popt, pcov = optimize.curve_fit(gaussian, x_fit, y_fit, p0=[max(y_fit), self.electron_tof_th, 0.5])
+        fig, ax = plt.subplots(figsize = (8, 6))  
+        #ax.hist(self.df[self.df["is_pion"] == 1]["tof"], bins = bins, histtype = "step")      
+        ax.plot(x_all, gaussian(x_all, *popt), "r--", label = f"Gaussian fit to electron peak:\nMean: {popt[1]:.2f} ns, std: {popt[2]:.2f} ns")
+        ax.set_xlabel("TOF (ns)", fontsize = 18)
+        ax.set_ylabel("Number of entries", fontsize = 18)
+        ax.legend(fontsize = 16)
+        ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) - Electron selection with the TOF", fontsize = 20)
+        self.df["is_electron"] = np.where(self.df["is_electron"] == 1, (self.df["tof"]>popt[1]-4*popt[2]) & (self.df["tof"]<popt[1]+4*popt[2]), False)
+        ax.hist(self.df[self.df["is_electron"] == 1]["tof"], bins = bins, histtype = "step")    
+        self.pdf_global.savefig(fig)
+        plt.close()
+
         
     def tag_electrons_ACT02(self, tightening_factor = 0):
         """
@@ -1058,7 +1139,7 @@ class BeamAnalysis:
         """
         bins = np.linspace(0, 40, 200)
         fig, ax = plt.subplots(figsize = (8, 6))    
-        h, _, _ = ax.hist(self.df["act_eveto"], bins = bins, histtype = "step")
+        h, bins, _ = ax.hist(self.df["act_eveto"], bins = bins, histtype = "step")
 
         #automatically find the middle of the least populated bin within 4 and 15 PE
         bin_centers = 0.5 * (bins[:-1] + bins[1:])
@@ -1086,11 +1167,165 @@ class BeamAnalysis:
         plt.close()
         
         #make sure that the particle is not already a slow travelling particle, proton or deuterium
-        #self.df["is_electron"] = np.where(self.df["act_eveto"]>self.eveto_cut, (self.df["tof"]<proton_tof_cut), False)
+        self.df["is_electron"] = np.where(self.df["act_eveto"]>self.eveto_cut, (self.df["tof"]<proton_tof_cut), False)
         n_electrons = sum(self.df["is_electron"])
         n_triggers = len(self.df["is_electron"])
         print(f"A total of {n_electrons} electrons are tagged with ACT02 out of {n_triggers}, i.e. {n_electrons/n_triggers * 100:.1f}% of the dataset")
+    
+    def tag_muon_pion_eveto(self):
+        #First layer of the fit using ACTs
+        bins = np.linspace(-10, 150, 200)
+        fig, ax = plt.subplots(figsize = (8, 6))   
         
+        idx = np.where(self.df["act_eveto"]<self.eveto_cut)[0]
+        mask = np.zeros(len(self.df["act_eveto"]), dtype=bool)
+        mask[idx] = True
+        #Removing the electron
+        h, bins = np.histogram(self.df[mask==1]["act_tagger"], bins=bins)
+        
+        bin_centers = 0.5 * (bins[:-1] + bins[1:])
+        h_smooth = gaussian_filter1d(h.astype(float), sigma=2)
+        
+        peaks, _ = find_peaks(h_smooth,distance=10,prominence=5)
+        print("This is ACT 3-4 peaks",peaks)
+        p1, p2 = sorted(peaks, key=lambda i: h_smooth[i], reverse=True)[:2]
+        left, right = sorted([p1, p2])
+        print(h_smooth[peaks])
+        plt.plot(bin_centers, h_smooth, label='Smoothed Histogram')
+        # Minimum between them
+        cut_index = left + np.argmin(h_smooth[left:right])
+        self.tagger_cut = bin_centers[cut_index]
+        h, _, _ = ax.hist(self.df[mask==1]["act_tagger"], bins = bins, histtype = "step")
+        ax.axvline(self.tagger_cut, linestyle = '--', color = 'black', label = f'Optimal tagger cut: {self.tagger_cut:.1f} PE') 
+        ax.set_yscale("log")
+        ax.set_xlabel("ACT3-4 total charge (PE)", fontsize = 18)
+        ax.set_ylabel("Number of entries", fontsize = 18)
+        ax.legend(fontsize = 16)
+        ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c)- ACT3-4", fontsize = 20)
+        self.pdf_global.savefig(fig)
+        plt.close()
+        
+        #make sure that the particle is not already a slow travelling particle, proton or deuterium
+        self.df["is_muon"] = np.where(np.logical_and(self.df["act_tagger"]>self.tagger_cut, self.df["act_eveto"]<self.eveto_cut), (self.df["tof"]<self.muon_tof_th+5), False)
+        self.df["is_pion"] = np.where(np.logical_and(self.df["act_tagger"]<self.tagger_cut, self.df["act_eveto"]<self.eveto_cut), (self.df["tof"]<self.pion_tof_th+5), False)
+
+        n_muons = sum(self.df["is_muon"])
+        n_pions = sum(self.df["is_pion"])
+        n_triggers = len(self.df["is_muon"])
+
+        print(f"A total of {n_muons} muons are tagged with ACT3-4 out of {n_triggers}, i.e. {n_muons/n_triggers * 100:.1f}% of the dataset")
+        print(f"A total of {n_pions} pions are tagged with ACT3-4 out of {n_triggers}, i.e. {n_pions/n_triggers * 100:.1f}% of the dataset")    
+        #Second layer of Identification with tof 
+
+        bins_muons = np.linspace(10, self.muon_tof_th+5, 500)
+        counts,bins=np.histogram(self.df[self.df["is_muon"] == 1]["tof"], bins = bins_muons)
+        mask = np.ones(len(bins)-1, dtype=bool)
+        mask = mask & (counts[:] != 0)
+        x_fit = bins[:-1][mask] + np.diff(bins)[0] / 2
+        x_all = bins[:-1] + np.diff(bins)[0] / 2
+        y_fit = counts[mask]
+        popt, pcov = optimize.curve_fit(gaussian, x_fit, y_fit, p0=[max(y_fit), self.muon_tof_th, 0.5])
+        fig, ax = plt.subplots(figsize = (8, 6))  
+        #ax.hist(self.df[self.df["is_muon"] == 1]["tof"], bins = bins, histtype = "step")      
+        ax.plot(x_all, gaussian(x_all, *popt), "r--", label = f"Gaussian fit to muon peak:\nMean: {popt[1]:.2f} ns, std: {popt[2]:.2f} ns")
+        ax.set_xlabel("TOF (ns)", fontsize = 18)
+        ax.set_ylabel("Number of entries", fontsize = 18)
+        ax.legend(fontsize = 16)
+        ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) - Muon selection with the TOF", fontsize = 20)
+       
+        #Selection of Muons 
+        self.df["is_muon"] = np.where(self.df["is_muon"] == 1, (self.df["tof"]>popt[1]-3*popt[2]) & (self.df["tof"]<popt[1]+3*popt[2]), False)
+        ax.hist(self.df[self.df["is_muon"] == 1]["tof"], bins = bins, histtype = "step")   
+        self.pdf_global.savefig(fig)
+        plt.close()
+        
+        bins_pions = np.linspace(10, self.pion_tof_th+5, 500)
+        counts,bins=np.histogram(self.df[self.df["is_pion"] == 1]["tof"], bins = bins_pions)
+        mask = np.ones(len(bins)-1, dtype=bool)
+        mask = mask & (counts[:] != 0)
+        x_fit = bins[:-1][mask] + np.diff(bins)[0] / 2
+        x_all = bins[:-1] + np.diff(bins)[0] / 2
+        y_fit = counts[mask]
+        popt, pcov = optimize.curve_fit(gaussian, x_fit, y_fit, p0=[max(y_fit), self.pion_tof_th, 0.5])
+        fig, ax = plt.subplots(figsize = (8, 6))  
+        #ax.hist(self.df[self.df["is_pion"] == 1]["tof"], bins = bins, histtype = "step")      
+        ax.plot(x_all, gaussian(x_all, *popt), "r--", label = f"Gaussian fit to pion peak:\nMean: {popt[1]:.2f} ns, std: {popt[2]:.2f} ns")
+        ax.set_xlabel("TOF (ns)", fontsize = 18)
+        ax.set_ylabel("Number of entries", fontsize = 18)
+        ax.legend(fontsize = 16)
+        ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) - Pion selection with the TOF", fontsize = 20)
+        self.df["is_pion"] = np.where(self.df["is_pion"] == 1, (self.df["tof"]>popt[1]-3*popt[2]) & (self.df["tof"]<popt[1]+3*popt[2]), False)
+        ax.hist(self.df[self.df["is_pion"] == 1]["tof"], bins = bins, histtype = "step")    
+        self.pdf_global.savefig(fig)
+        plt.close()
+        n_muons = sum(self.df["is_muon"])
+        n_pions = sum(self.df["is_pion"])
+        n_triggers = len(self.df["is_muon"])
+
+        print(f"A total of {n_muons} muons are tagged with ACT3-4 and TOF out of {n_triggers}, i.e. {n_muons/n_triggers * 100:.1f}% of the dataset")
+        print(f"A total of {n_pions} pions are tagged with ACT3-4 and TOF out of {n_triggers}, i.e. {n_pions/n_triggers * 100:.1f}% of the dataset")    
+        
+    def plot_tof_particle(self,particle_name):
+        bins = np.linspace(10, 20, 500)
+        fig, ax = plt.subplots(figsize = (8, 6))
+        
+        idx = np.where(self.df["act_eveto"]>self.eveto_cut)[0]
+        mask = np.zeros(len(self.df["act_eveto"]), dtype=bool)
+        mask[idx] = True
+        #print(self.df["tof"])
+        #self.df[self.df[population]==1][tof_var[i]],
+        ax.hist(self.df[self.df["is_"+particle_name] == 1]["tof"], bins = bins, histtype = "step")
+        ax.set_xlabel("TOF (ns)", fontsize = 18)
+        ax.set_ylabel("Number of entries", fontsize = 18)
+        ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c)"+particle_name+"selection with the TOF", fontsize = 20)
+        self.pdf_global.savefig(fig)
+        plt.close()
+           
+       
+        
+    """
+    def identify_particle_tof(self,beam_momentum):
+        if beam_momentum<500:
+            #Theoritical TOF calculation
+            electron_tof_th=TOF_particle_in_ns("electron",beam_momentum) 
+            muon_tof_th=TOF_particle_in_ns("muon",beam_momentum) 
+            pion_tof_th=TOF_particle_in_ns("pion",beam_momentum) 
+            proton_tof_th=TOF_particle_in_ns("proton",beam_momentum) 
+            deuterium_tof_th=TOF_particle_in_ns("deuterium",beam_momentum) 
+            tritium_tof_th=TOF_particle_in_ns("tritium",beam_momentum) 
+            
+            #Tag electrons
+            idx = np.where(self.df["act_eveto"]>self.eveto_cut)[0]
+            mask = np.zeros(len(self.df["act_eveto"]), dtype=bool)
+            mask[idx] = True
+            bins = np.linspace(10, 20, 500)
+            x,y=np.histogram(self.df[mask==1]["tof"], bins = bins)
+            popt, pcov = fit_gaussian(x,y,p0=[max(x), electron_tof_th, 0.2])
+            print("Electron peak is at",popt[1],"ns, theoretical value is",electron_tof_th,"ns", "offset:",popt[1]-electron_tof_th)
+            
+            #Tag muon 
+            self.df["is_muon"] = np.where(self.df["act_tagger"]>cut_line, (self.df["tof"]<pion), self.df["is_electron"])
+            
+            
+            #Identify particle in TOF peaks   
+            tof_arr=np.array(self.df["tof"])
+            mask_1=np.where(np.logical_and(tof_arr<40,tof_arr>10)) #Initial filtering
+            data=tof_arr[mask_1]
+            kde = gaussian_kde(data,bw_method=0.1)
+            pdf = kde(x_grid)
+            plt.plot(x_grid, pdf, 'r-', lw=2, label='Gaussian KDE fit bandwidth 0.1')
+            peaks, properties = find_peaks(pdf, prominence=0.01)
+            self.mu_init = x_grid[peaks]
+            for peak in self.mu_init:
+                mask_peak=np.where(np.logical_and(tof_arr<peak+1,tof_arr>peak-1))
+                data_peak=tof_arr[mask_peak]        
+            
+            print("Means fit", mean_fit)
+            print("Sigmas:", sigmas)
+            print("Weights:", weights)
+            
+
+    """    
     def plot_tof_eveto(self): 
         """
         Plot the TOF for the events that are tagged as electrons based on the ACT0-2 cut line
@@ -1133,14 +1368,45 @@ class BeamAnalysis:
         ax.set_xlabel("TOF (ns)", fontsize = 18)
         ax.set_ylabel("Number of entries", fontsize = 18)
         if proton:
-            proton_tof=self.mu_init[0]+(17.47-14.81) 
-            tritium_tof=self.mu_init[0]+(23.71-14.81)
+            n_components = len(self.mu_init)
+            weights_init = pdf[peaks]
+            weights_init /= weights_init.sum()
+            gmm = GaussianMixture(
+                n_components=n_components,
+                covariance_type="full",
+                means_init=self.mu_init.reshape(-1, 1),
+                weights_init=weights_init,
+                random_state=0
+            )
+            gmm.fit(data.reshape(-1, 1))
+            mean_fit = gmm.means_.flatten()
+            sigmas  = np.sqrt(gmm.covariances_.flatten())
+            weights = gmm.weights_
+            print("Means fit", mean_fit)
+            print("Sigmas:", sigmas)
+            print("Weights:", weights)
+            x = np.linspace(tof_arr[mask_1].min(), tof_arr[mask_1].max(), 1000)
+            i=0
+            for w, mu, s in zip(weights, mean_fit, sigmas):
+                plt.plot(x, w * norm.pdf(x, mu, s), '--',label="Mean: "+format(mean_fit[i],'.2f'))
+                i+=1
+            proton_tof=mean_fit[1]#self.mu_init[0]+(17.47-14.81) 
+            tritium_tof=self.mu_init[2]+(23.71-14.81)
             ax.vlines(31.44, ymin=0, ymax=ax.get_ylim()[1], colors='r', linestyles='--', label='Tritium cut')
             ax.vlines(proton_tof, ymin=0, ymax=ax.get_ylim()[1], colors='r', linestyles='--', label='Proton cut')
             ax.vlines(tritium_tof, ymin=0, ymax=ax.get_ylim()[1], colors='r', linestyles='--', label='Deuterium cut')
-        for peak in self.mu_init:
-            ax.vlines(peak, ymin=0, ymax=ax.get_ylim()[1], colors='g', linestyles='--')
+            
+            self.df["is_proton"] = np.where((self.df["tof"]>proton_tof-3*sigmas[1]) & (self.df["tof"]<proton_tof+3*sigmas[1]), True, False)
+            self.df["is_tritium"] = np.where((self.df["tof"]>tritium_tof-3*sigmas[2]) & (self.df["tof"]<tritium_tof+3*sigmas[2]), True, False)
+        #for peak in self.mu_init:
+        #    ax.vlines(peak, ymin=0, ymax=ax.get_ylim()[1], colors='g', linestyles='--')
         #plt.legend()
+            n_protons = sum(self.df["is_proton"])
+            n_tritium = sum(self.df["is_tritium"])
+            n_triggers = len(self.df["is_proton"])
+
+            print(f"A total of {n_protons} protons are tagged with TOF out of {n_triggers}, i.e. {n_protons/n_triggers * 100:.1f}% of the dataset")
+            print(f"A total of {n_tritium} tritium are tagged with TOF out of {n_triggers}, i.e. {n_tritium/n_triggers * 100:.1f}% of the dataset")    
         ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) - TOF spectrum and peak identification", fontsize = 20)
         self.pdf_global.savefig(fig)
         plt.close()
@@ -1159,10 +1425,10 @@ class BeamAnalysis:
         ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) - TOF vs ACT0-2", fontsize = 20)
         self.pdf_global.savefig(fig)
         plt.close()
-        self.pdf_global.close()
+        #self.pdf_global.close()
         
     def plot_tof_vs_charge_act34(self):
-        charge_bins = np.linspace(0, 70, 100)
+        charge_bins = np.linspace(-10, 90, 100)
         fig, ax = plt.subplots(figsize = (8, 6))    
         h, _, _ = ax.hist(self.df_all["act_tagger"], bins = charge_bins, histtype = "step")
         ax.set_yscale("log")
@@ -1174,7 +1440,7 @@ class BeamAnalysis:
         
         bins_tot = np.linspace(10, 30, 500)
         fig, ax = plt.subplots(figsize = (8, 6))
-        h = ax.hist2d(self.df_all["act_tagger"], self.df["tof"], bins = (charge_bins, bins_tot), norm=LogNorm())
+        h = ax.hist2d(self.df["act_tagger"], self.df["tof"], bins = (charge_bins, bins_tot), norm=LogNorm())
         fig.colorbar(h[3], ax=ax)
         ax.set_xlabel("ACT3-4 total charge (PE)", fontsize = 18)
         ax.set_ylabel("TOF test (ns)", fontsize = 18)
@@ -1274,7 +1540,29 @@ class BeamAnalysis:
             print("Please make the proton selection using tag_protons_TOF before checking the ACT35 left vs right plot to get the most of out it")
             return 0
         self.pdf_global.close()  
+    def tag_muons_pions_tof(self, beam_momentum):
+        """
+        Function to identify the muons and pions based on the charge deposited in ACT34,
+        potentially using the muon tagger
+        """
+        muon_tof_th=TOF_particle_in_ns("muon",beam_momentum) #particle_name, momentum
         
+        n_muons_pions_initial = sum((~self.df["is_electron"]))
+        
+        
+        #Here plot visually the muon/pion cutline to check that it is correct
+        self.plot_ACT34_left_vs_right(cut_line, "pion/muon")
+        
+        ### identify the particles above the cut as muons/pions
+        #make sure that the particle is not already a slow travelling particle, proton or deuterium and that it stays an electron if it has already been identified by ACT02 but isn't above the cutline
+        self.df["is_muon_pion"] = np.where(self.df["act_tagger"]>cut_line, (self.df["tof"]<proton_tof_cut) & (~self.df["is_electron"]), False)
+        
+        self.act34_muon_pion_cut = cut_line
+
+        
+        n_muons_pions = sum(self.df["is_muon_pion"])
+        n_triggers = len(self.df["is_muon_pion"])
+        print(f"A total of {n_muons_pions - n_muons_pions_initial} additional muons/pions are tagged with ACT34, on top of the {n_muons_pions_initial} that were already identified by TOF")   
         
         
         
@@ -1321,9 +1609,13 @@ class BeamAnalysis:
         
         
     def tag_muons_pions_ACT35(self):
-        '''Function to identify the muons and pions based on the charge deposited in ACT35, potentially using the muon tagger'''
+        """
+        Function to identify the muons and pions based on the charge deposited in ACT35,
+        potentially using the muon tagger
+        """
         
-        #step 1: find the optimal cut line in the muon tagger and decide if it is useful to implement it (that is, in case there are still some non-electrons left after the cut
+        #step 1: find the optimal cut line in the muon tagger and decide if it is useful to implement it 
+        # (that is, in case there are still some non-electrons left after the cut
         bins = np.linspace(120, 800, 100)
            
         
@@ -2128,7 +2420,7 @@ class BeamAnalysis:
         if verbose: print(f"\n The initial momenta considered for the {p_name} are {momentum}") 
 
             
-        #reset the time of flight and the total length, will do again laterbut necessary for the Mylar to have
+        #reset the time of flight and the total length, will do again later but necessary for the Mylar to have
         total_tof = np.zeros(len(momentum))
         total_length = 0
         
@@ -3344,7 +3636,6 @@ class BeamAnalysis:
         plt.close()
         
         
-    #def measure_particle_TOF_kde(self):
                 
     def measure_particle_TOF(self):
         """
@@ -3730,6 +4021,50 @@ class BeamAnalysis:
                 "electron_tof":np.array([self.mu_init[0]], dtype=np.float64),
                 "proton_tof":np.array([self.mu_init[1]], dtype=np.float64),
                 "deuterium_tof":np.array([self.mu_init[2]], dtype=np.float64)   ,       
+            }
+    def output_to_root_pid_high(self, output_name = None):
+        """
+        Output the PID results of the beam analysis for low momentum runs as a root file.
+        """
+        if output_name == None:
+            output_name = f"beam_analysis_output_pid_high_R{self.run_number}.root"
+        
+        branches = {
+            "is_proton": self.df["is_proton"].to_numpy(),
+            "is_tritium": self.df["is_tritium"].to_numpy(),
+            "event_id": self.df["event_id"].to_numpy(),
+        }
+        
+        with uproot.recreate(output_name) as f:
+            f["pid_high_analysis"] = branches
+            f["run_info"] = {
+                "run_number": np.array([self.run_number], dtype=np.int32),
+                "run_momentum": np.array([self.run_momentum], dtype=np.float64),          
+            }
+  
+            
+            
+    def output_to_root_pid_low(self, output_name = None):
+        """
+        Output the PID results of the beam analysis for low momentum runs as a root file.
+        """
+        if output_name == None:
+            output_name = f"beam_analysis_output_pid_low_R{self.run_number}.root"
+        
+        branches = {
+            "act_eveto": self.df["act_eveto"].to_numpy(),
+            "act_tagger": self.df["act_tagger"].to_numpy(),
+            "is_muon": self.df["is_muon"].to_numpy(),
+            "is_pion": self.df["is_pion"].to_numpy(),
+            "is_electron": self.df["is_electron"].to_numpy(),
+            "event_id": self.df["event_id"].to_numpy(),
+        }
+        
+        with uproot.recreate(output_name) as f:
+            f["pid_low_analysis"] = branches
+            f["run_info"] = {
+                "run_number": np.array([self.run_number], dtype=np.int32),
+                "run_momentum": np.array([self.run_momentum], dtype=np.float64),          
             }
   
             
