@@ -1262,7 +1262,7 @@ class BeamAnalysis:
         ax.legend(fontsize = 16)
         ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) - Pion selection with the TOF", fontsize = 20)
         #Selection of Pions at 3sigma around the mean
-        self.df["is_pion"] = np.where(self.df["is_pion"] == 1, (self.df["tof"]>popt[1]-3*popt[2]) & (self.df["tof"]<popt[1]+3*popt[2]), False)
+        self.df["is_pion"] = np.where(self.df["is_pion"] == 1, (self.df["tof"]>popt[1]-2*popt[2]) & (self.df["tof"]<popt[1]+2*popt[2]), False)
         ax.hist(self.df[self.df["is_pion"] == 1]["tof"], bins = bins, histtype = "step")    
         self.pdf_global.savefig(fig)
         plt.close()
@@ -2034,6 +2034,7 @@ class BeamAnalysis:
             "hit_mpmt_card_ids", "hit_pmt_readout_mask",
             "hit_mpmt_slot_ids", "hit_pmt_position_ids",
             "hit_pmt_channel_ids", "hit_pmt_charges",
+            "trigger_times", "trigger_types","window_time",'hit_pmt_times'
         ]
 
         BLOCK_MAX_EVENTS = 500
