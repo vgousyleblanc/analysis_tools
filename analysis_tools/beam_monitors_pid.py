@@ -1321,7 +1321,7 @@ class BeamAnalysis:
         self.pdf_global.savefig(fig)
         plt.close()
           
-    def tag_protons_tof_new(self):
+    def tag_protons_tof_new(self,use_act=False):
         """
         Plot the TOF spectrum and fit the peaks with a GMM to identify protons and deuterium
         17.47 ns for protons at 500 MeV/c
@@ -1329,18 +1329,42 @@ class BeamAnalysis:
         14.81 ns for pions at 500 MeV/c
         12.97 ns for muons at 500 MeV/c
         """
+        if use_act:
+            fig, ax = plt.subplots(figsize = (8, 6))   
+            bins = np.linspace(-10, 90, 100)
+            h, bins = np.histogram(self.df["act_tagger"], bins=bins)
+            bin_centers = 0.5 * (bins[:-1] + bins[1:])
+            h_smooth = gaussian_filter1d(h.astype(float), sigma=2)
+            peaks, _ = find_peaks(h_smooth,distance=10,prominence=5)
+            p1, p2 = sorted(peaks, key=lambda i: h_smooth[i], reverse=True)[:2]
+            left, right = sorted([p1, p2])
+            plt.plot(bin_centers, h_smooth, label='Smoothed Histogram')
+            # Find the cut index
+            cut_index = left + np.argmin(h_smooth[left:right])
+            self.tagger_cut = bin_centers[cut_index]
+            h, _, _ = ax.hist(self.df["act_tagger"], bins = bins, histtype = "step")
+            ax.axvline(self.tagger_cut, linestyle = '--', color = 'black', label = f'Optimal tagger cut: {self.tagger_cut:.1f} PE') 
+            ax.set_yscale("log")
+            ax.set_xlabel("ACT3-4 total charge (PE)", fontsize = 18)
+            ax.set_ylabel("Number of entries", fontsize = 18)
+            ax.legend(fontsize = 16)
+            ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c)- ACT3-4", fontsize = 20)
+            self.pdf_global.savefig(fig)
+            plt.close()
+        
         fig, ax = plt.subplots(figsize = (8, 6))
         tof_arr=np.array(self.df["tof"])
-        mask_1=np.where(np.logical_and(tof_arr<40,tof_arr>10)) #Initial filtering
+        mask_1=np.where(np.logical_and(tof_arr<60,tof_arr>10)) #Initial filtering
         data=tof_arr[mask_1]
         kde = gaussian_kde(data,bw_method=0.1)
         x_grid = np.linspace(min(data) - 3, max(data) + 3, 1000)
         pdf = kde(x_grid)
         #plt.plot(x_grid, pdf, 'r-', lw=2, label='Gaussian KDE fit bandwidth 0.1')
         peaks, properties = find_peaks(pdf, prominence=0.01)
+        print("These are the peaks found in the TOF spectrum:",peaks,x_grid[peaks])
         self.mu_init = x_grid[peaks]
-
-        bins = np.linspace(10, 30, 500)
+    
+        bins = np.linspace(10, 50, 500)
         ax.hist(self.df["tof"], bins = bins, histtype = "step",density=True)
         ax.set_xlabel("TOF (ns)", fontsize = 18)
         ax.set_ylabel("Number of entries", fontsize = 18)
@@ -1349,26 +1373,38 @@ class BeamAnalysis:
         weights_init = pdf[peaks]
         weights_init /= weights_init.sum()
         #try:
-        gmm = GaussianMixture(
-            n_components=n_components,
-            covariance_type="full",
-            means_init=self.mu_init.reshape(-1, 1),
-            weights_init=weights_init,
-            random_state=0
-        )
-        gmm.fit(data.reshape(-1, 1))
-        mean_fit = gmm.means_.flatten()
-        sigmas  = np.sqrt(gmm.covariances_.flatten())
-        weights = gmm.weights_
+        print(self.mu_init)
+        mean_fit=[]
+        sigmas=[]
+        amplitude=[]
+        for i in range(0,n_components):
+            bins = np.linspace(self.mu_init[i]-1,self.mu_init[i]+1,100)
+            if use_act:
+                idx = np.where(np.logical_and(np.logical_and(self.df["tof"]>self.mu_init[i]-0.5,self.df["tof"]<self.mu_init[i]+0.5),self.df["act_tagger"]<self.tagger_cut))[0]
+            else:
+                idx = np.where(np.logical_and(self.df["tof"]>self.mu_init[i]-1,self.df["tof"]<self.mu_init[i]+1))[0]
+            mask_0 = np.zeros(len(self.df["tof"]), dtype=bool)
+            mask_0[idx] = True
+            counts,bins=np.histogram(self.df[mask_0==1]["tof"], bins = bins)
+            mask = np.ones(len(bins)-1, dtype=bool)
+            mask = mask & (counts[:] != 0)
+            x_fit = bins[:-1][mask] + np.diff(bins)[0] / 2
+            x_all = bins[:-1] + np.diff(bins)[0] / 2
+            y_fit = counts[mask]/np.max(counts[mask]) #Normalize to avoid overflow
+            popt, pcov = optimize.curve_fit(gaussian, x_fit, y_fit, p0=[1, self.mu_init[i], 0.1])
+            mean_fit.append(popt[1])
+            sigmas.append(popt[2])
+            amplitude.append(popt[0])
         print("Means fit", mean_fit)
         print("Sigmas:", sigmas)
-        print("Weights:", weights)
+        print("Amplitudes:", amplitude)
         x = np.linspace(tof_arr[mask_1].min(), tof_arr[mask_1].max(), 1000)
         i=0
-        for w, mu, s in zip(weights, mean_fit, sigmas):
-            plt.plot(x, w * norm.pdf(x, mu, s), '--',label="Mean: "+format(mean_fit[i],'.2f'))
+        for a,mu, s in zip(amplitude, mean_fit, sigmas):
+            #plt.plot(x, a*norm.pdf(x, mu, s), '--',label="Mean: "+format(mean_fit[i],'.2f'))
+            plt.plot(x, gaussian(x, a, mu, s), '--',label="Mean: "+format(mean_fit[i],'.2f'))
             i+=1
-        proton_tof=mean_fit[1]#self.mu_init[0]+(17.47-14.81) 
+        proton_tof=mean_fit[1]
         tritium_tof=mean_fit[2]
         ax.vlines(mean_fit[0], ymin=0, ymax=ax.get_ylim()[1], colors='r', linestyles='--', label='First peak')
         ax.vlines(proton_tof, ymin=0, ymax=ax.get_ylim()[1], colors='r', linestyles='--', label='Proton peak')
@@ -1385,7 +1421,7 @@ class BeamAnalysis:
         delta_t=(mean_fit[1]-mean_fit[0])*1e-9
         p_estimate_2=(particle_masses['Protons']*1000)/np.sqrt((1+self.c*delta_t/self.distance_m)**2-1)
         p_estimate=(particle_masses['Protons']*1000)/np.sqrt((-1+(proton_tof_corrected*c/self.distance_m)**2))
-        print("The run momentum estimate is", p_estimate,"Estimate with delta T",p_estimate_2,"Run momentum",self.run_momentum)
+        print("The run momentum estimate is", p_estimate,"Estimate with delta T",np.round(p_estimate_2),"Run momentum",self.run_momentum)
         print(f"A total of {n_protons} protons are tagged with TOF out of {n_triggers}, i.e. {n_protons/n_triggers * 100:.1f}% of the dataset")
         print(f"A total of {n_tritium} tritium are tagged with TOF out of {n_triggers}, i.e. {n_tritium/n_triggers * 100:.1f}% of the dataset")    
         ax.set_title(f"Run {self.run_number} ({self.run_momentum} MeV/c) - TOF spectrum and peak identification", fontsize = 20)
@@ -1417,6 +1453,8 @@ class BeamAnalysis:
         #self.pdf_global.close()
         
     def plot_tof_vs_charge_act34(self):
+        
+        
         charge_bins = np.linspace(-10, 90, 100)
         fig, ax = plt.subplots(figsize = (8, 6))    
         h, _, _ = ax.hist(self.df_all["act_tagger"], bins = charge_bins, histtype = "step")
@@ -1996,32 +2034,20 @@ class BeamAnalysis:
             
             
         
-    def write_output_particles(self, particle_number_dict, store_beam_PID, filename = None):
+    def write_output_particles(self, particle_number_dict, store_beam_PID,proton=False, filename = None):
         
         """This functions writes out the WCTE tank information as well as the additional beam variables (TOF, ACT charges) 
         necessary for making the selection, This function also stores the particle type guess obtained from the beam data 
         but we encourage each analyser to develop their own selection
         particle_nu
+        particle_number_dict: dictionary containing the number of each particle type in the run typically the same ?
+        store_beam_PID: boolean, whether to store the beam PID information
+        proton: boolean, whether the run is a proton run (True) or a mixed beam run (False)
+        filename: string, name of the output parquet file
         
         """
         
-        """
-        if store_beam_PID:
-            #get the particle identification from the beam analysis
-            #index_mu = np.array(self.is_kept_event_id) * np.array(self.df["is_muon"])
-            #index_pi =  np.array(self.is_kept_event_id) * np.array(self.df["is_pion"])
-            #index_electron =  np.array(self.is_kept_event_id) * np.array(self.df["is_electron"])
-            index_mu = self.is_kept_event_id[self.df["is_muon"].values.astype(bool)]
-            index_pi = self.is_kept_event_id[self.df["is_pion"].values.astype(bool)]
-            index_electron = self.is_kept_event_id[self.df["is_electron"].values.astype(bool)]
-            #index_proton =  np.array(self.is_kept_event_id) * np.array(self.df["is_proton"])
 
-            #Remove the events that are not of the given particle type
-            #index_mu = index_mu[index_mu !=0][:particle_number_dict["muon"]]
-            #index_pi = index_pi[index_pi !=0][:particle_number_dict["pion"]]
-            #index_electron = index_electron[index_electron !=0][:particle_number_dict["electron"]]
-            #index_proton = index_proton[index_proton !=0][:particle_number_dict["proton"]]
-        """   
 
         # ---- inputs ------------------------------------------------------
         file_path = f"/eos/experiment/wcte/data/2025_commissioning/processed_offline_data/production_v0_5/{self.run_number}/WCTE_offline_R{self.run_number}S0_VME_matched.root"
@@ -2052,8 +2078,24 @@ class BeamAnalysis:
         #if store_beam_PID:
             
         particle_map = {}
+        if proton and store_beam_PID:
+            # Get indices for each particle type from identified events only
+            #index_electron = self.is_kept_event_id[self.df["is_electron"].values.astype(bool)]
+            index_proton = self.is_kept_event_id[self.df["is_proton"].values.astype(bool)]
+            index_tritium = self.is_kept_event_id[self.df["is_tritium"].values.astype(bool)]
+            
+            # Map event IDs to particle labels
+            #for idx in index_electron:
+            #    particle_map[int(idx)] = "electron"
+            for idx in index_tritium:
+                particle_map[int(idx)] = "tritium"
+            for idx in index_proton:
+                particle_map[int(idx)] = "proton"
+            
+            #print(f"Identified particles: {len(index_electron)} pion/electron/muon, 
+            print(f"{len(index_tritium)} tritium, {len(index_proton)} protons")
         
-        if store_beam_PID:
+        elif store_beam_PID:
             # Get indices for each particle type from identified events only
             index_electron = self.is_kept_event_id[self.df["is_electron"].values.astype(bool)]
             index_mu = self.is_kept_event_id[self.df["is_muon"].values.astype(bool)]
@@ -2073,6 +2115,7 @@ class BeamAnalysis:
         #all_keep_idx = np.array(self.is_kept_event_id[:particle_number_dict["triggers"]], dtype=np.int64)
         all_keep_idx = np.array(self.df_all["event_id"].values[:particle_number_dict["triggers"]], dtype=np.int64)
         particle_labels = np.array([particle_map.get(int(idx), "unidentified") for idx in all_keep_idx])
+        print("All good")
         t0 = time.time()
         """
         #all_keep_idx = np.concatenate([
