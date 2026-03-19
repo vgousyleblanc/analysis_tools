@@ -1,6 +1,10 @@
 ## Contribution Rules
 Test
+
 Main branch on WCTE/analysis_tools is protected - please open a pull request (either from your own branch or fork) to push changes to main branch
+
+
+To install all the requires dependancies, first create a virtual enviromnent and then using pip install requirements.txt install all of them 
 
 Installation:
 
